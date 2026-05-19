@@ -1,0 +1,8 @@
+{
+  "keyword": "bioclip2을 이용해서 다음과 같은 주장이 있어\n1. Hierarchical prompts improve semantic compactness of biologically related concepts in embedding space.\n2. The observed improvement suggests that pretrained vision-language models already encode latent taxonomic structure.\n3. Hierarchical supervision may function as a semantic organizer of embedding geometry rather than merely providing additional textual information.",
+  "slug": "bioclip2-hierarchical-prompts",
+  "stage": "7_done",
+  "stages_completed": ["1_problem", "2_rqs", "3_litreview", "4_experiments", "5_draft", "6_reviews", "7_rebuttal"],
+  "auto_mode": true,
+  "created_at": "2026-05-19T00:00:00Z"
+}

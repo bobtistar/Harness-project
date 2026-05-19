@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(d:/project/harness/**)",
+      "Write(d:/project/harness/workspace/**)",
+      "Edit(d:/project/harness/workspace/**)",
+      "Glob(d:/project/harness/**)",
+      "Grep(d:/project/harness/**)",
+      "WebSearch",
+      "WebFetch",
+      "Bash(mkdir:*)",
+      "Bash(python --version)",
+      "Bash(python -V)",
+      "Bash(pip list)",
+      "Bash(pip show:*)",
+      "Bash(python -m pip:*)",
+      "Bash(pip --version)"
+    ]
+  }
+}
