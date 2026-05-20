@@ -14,7 +14,8 @@
       "Bash(pip list)",
       "Bash(pip show:*)",
       "Bash(python -m pip:*)",
-      "Bash(pip --version)"
+      "Bash(pip --version)",
+      "Bash(python -c \"import json; d=json.load\\(open\\('workspace/bioclip2/04_experiments/results/cub200_smoke/exp3_counterfactuals.json'\\)\\); print\\(json.dumps\\(d['means_by_condition'], indent=2\\)\\)\")"
     ]
   }
 }

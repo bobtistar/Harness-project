@@ -40,6 +40,7 @@ mlruns/
 # Data / datasets
 data/
 datasets/
+.data/
 CUB_200_2011/
 
 # Model / embedding / checkpoint files
