@@ -22,7 +22,7 @@
 |-------|--------|---------|-----------|
 | **BioCLIP2 ViT-L/14** | `hf:imageomics/bioclip-2` (embedding_dim=768) | Yes (frozen) | **Yes** |
 | BioCLIP ViT-B/16 | `imageomics/bioclip` HF | Yes | No (본 실행은 BioCLIP2만) |
-| OpenCLIP ViT-L/14 (laion2b_s32b_b82k) | `open_clip_torch` | Yes | No |
+| OpenCLIP ViT-L/14 (laion2b_s32b_b82k) | `open_clip_torch` | Yes | **Yes** (cross-model baseline 비교용) |
 | C5 adapter | 자체 구현 (`models/proposed_textfree.py`): linear D→D + L2 norm + LCA-weighted InfoNCE | Light fine-tuned (5 epoch, lr=1e-4 AdamW) | **Yes** |
 
 ## 3. Metrics (정확한 정의)
@@ -102,6 +102,18 @@ $$L_i = -\sum_j \frac{w_{ij}}{\sum_k w_{ik}} \log \frac{\exp(s_{ij}/\tau)}{\sum_
 | Exp1 (RQ1, 5 seeds × 2 cond) | 14:53:17 → 14:58:26 | 5분 9초 |
 | Exp2 (rank-level + permutation probe) | 14:58:26 → 15:04:09 | 5분 43초 |
 | Exp3 (5 seeds × 6 cond, C5 fine-tune 포함) | 15:04:09 → 15:30:09 | **26분** |
+
+### OpenCLIP ViT-L/14 run (cross-model baseline)
+
+| 항목 | 값 |
+|---|---|
+| 실행 일자 | 2026-05-21, 05:00:06 → 06:08:29 |
+| 모델 ID | `open_clip:ViT-L-14@laion2b_s32b_b82k` (embedding_dim=768, image_size=224) |
+| 사전학습 데이터 | LAION-2B (일반 도메인, 20억 이미지-텍스트 쌍) |
+| 디바이스 | cuda, AMP(float16), batch_size=128, num_workers=2 |
+| 누적 소요 시간 | 약 68분 (모델 로드 41초, 인코딩 2분 14초, Exp1 11분 52초, Exp2 11분 40초, Exp3 41분 48초) |
+| 임베딩 캐시 | `results/cub200_openclip-vitl14/img_emb_openclip-vitl14.npz` (11,788 × 768) |
+| 목적 | BioCLIP2 결과와의 cross-model 비교 (RQ4와는 별개; 동일 CUB-200 데이터에서 일반 도메인 vs 생물 도메인 사전학습 모델 비교) |
 
 ## 8. Data Ethics & Licensing
 

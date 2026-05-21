@@ -83,5 +83,6 @@
 | Exp2 (rank-level + latent probe) | **완료** (kingdom/phylum/class은 degenerate → skip) |
 | Exp3 (C0…C5 counterfactual ablation) | **완료** (5 seeds) |
 | Exp4 (5 도메인 cross-domain) | **미수행** — Aves만 |
+| **OpenCLIP ViT-L/14 (추가 baseline 비교)** | **완료** — CUB-200 동일 데이터, Exp1·Exp2·Exp3 모두 실행 (≈ 68분). RQ4(다중 도메인 meta-analysis)와는 별개의 cross-model 비교; 동일 Aves 단일 도메인에서 일반 도메인 사전학습 모델(LAION-2B)과 생물 도메인 사전학습 모델(BioCLIP2)의 정성적 결론 일관성 확인 목적. |
 
 실제 실행 결과는 [results.md](results.md) 참조.
