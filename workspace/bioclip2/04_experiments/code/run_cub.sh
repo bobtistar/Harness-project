@@ -16,7 +16,7 @@ set -e
 # ----------------------------------------------------------------------------
 # 옵션 (환경변수로 오버라이드 가능)
 # ----------------------------------------------------------------------------
-CUB_ROOT="${CUB_ROOT:-$HOME/CUB_200_2011}"
+CUB_ROOT="${CUB_ROOT:-/Users/feynman1227/프로젝트/Harness-project/workspace/bioclip2/CUB_200_2011}"
 MODEL="${MODEL:-openclip-vitb32}"
 BATCH_SIZE="${BATCH_SIZE:-128}"
 NUM_WORKERS="${NUM_WORKERS:-4}"

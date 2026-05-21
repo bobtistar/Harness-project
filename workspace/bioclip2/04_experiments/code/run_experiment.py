@@ -21,10 +21,12 @@ Outputs
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import os
 import sys
 import time
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -286,14 +288,100 @@ def experiment_3(records, sample_records, labels, img_emb, encoder_state, mock, 
 # ---------------------------------------------------------------------------
 
 def _autodetect_device(prefer: Optional[str]) -> str:
-    """device 인자가 None이면 CUDA 사용 가능 여부를 보고 자동 결정."""
+    """device 인자가 None이면 CUDA -> MPS -> CPU 순서로 자동 결정."""
     if prefer:
         return prefer
     try:
         import torch
-        return "cuda" if torch.cuda.is_available() else "cpu"
+        if torch.cuda.is_available():
+            return "cuda"
+        if (hasattr(torch.backends, "mps")
+                and torch.backends.mps.is_available()):
+            return "mps"
+        return "cpu"
     except Exception:
         return "cpu"
+
+
+def _iter_parent_paths(start: Path):
+    yield start
+    yield from start.parents
+
+
+def _load_env_file(path: Optional[str], disabled: bool = False) -> Optional[str]:
+    """Load simple KEY=VALUE entries from .env without overriding existing env vars."""
+    if disabled:
+        return None
+
+    candidates: List[Path] = []
+    if path:
+        candidates.append(Path(path).expanduser())
+    else:
+        starts = [Path.cwd(), Path(__file__).resolve().parent]
+        seen = set()
+        for start in starts:
+            for parent in _iter_parent_paths(start):
+                env_path = parent / ".env"
+                if env_path not in seen:
+                    candidates.append(env_path)
+                    seen.add(env_path)
+
+    selected = next((p for p in candidates if p.is_file()), None)
+    if selected is None:
+        if path:
+            raise FileNotFoundError(f".env file not found: {path}")
+        return None
+
+    with selected.open("r", encoding="utf-8") as f:
+        for raw_line in f:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[len("export "):].strip()
+            key, sep, value = line.partition("=")
+            if not sep:
+                continue
+            key = key.strip()
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+                value = value[1:-1]
+            if key and key not in os.environ:
+                os.environ[key] = value
+    return str(selected)
+
+
+def _configure_hf_token(args) -> Optional[str]:
+    """Load an HF token from CLI/file/prompt/env and expose it to HuggingFace Hub."""
+    source = None
+    token = args.hf_token
+    if token:
+        source = "--hf_token"
+    elif args.hf_token_file:
+        token_path = os.path.expanduser(args.hf_token_file)
+        with open(token_path, "r", encoding="utf-8") as f:
+            token = f.read().strip()
+        source = "--hf_token_file"
+    elif args.hf_token_prompt:
+        token = getpass.getpass("Hugging Face token: ").strip()
+        source = "--hf_token_prompt"
+    else:
+        token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+        if token:
+            source = "environment"
+
+    if token:
+        os.environ["HF_TOKEN"] = token
+        os.environ["HUGGING_FACE_HUB_TOKEN"] = token
+    return source
+
+
+def _redacted_args(args) -> Dict[str, object]:
+    """Return argparse values with secrets hidden before logging."""
+    safe = vars(args).copy()
+    if safe.get("hf_token"):
+        safe["hf_token"] = "<redacted>"
+    return safe
 
 
 def _subsample_per_class(labels, image_paths, sample_records, max_per_class, seed):
@@ -330,7 +418,7 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--n_seeds", type=int, default=5)
     parser.add_argument("--device", default=None,
-                        help="'cuda' / 'cpu'. 미지정 시 CUDA 자동 감지.")
+                        help="'cuda' / 'mps' / 'cpu'. 미지정 시 CUDA -> MPS -> CPU 순서로 자동 감지.")
     parser.add_argument("--out", default=os.path.join(os.path.dirname(__file__), "..", "results"))
     parser.add_argument("--batch_size", type=int, default=64,
                         help="이미지 인코딩 배치 크기. GPU 메모리에 맞춰 조정.")
@@ -342,7 +430,19 @@ def main():
                         help="이미지 임베딩 .npz 캐시 경로. 존재하면 로드, 없으면 인코딩 후 저장.")
     parser.add_argument("--max_per_class", type=int, default=None,
                         help="클래스당 이미지 수 상한 (빠른 테스트용). 예: 10 → 200 클래스 × 10 = 2000장.")
+    parser.add_argument("--hf_token", default=None,
+                        help="HuggingFace token. 쉘 히스토리에 남을 수 있으므로 --hf_token_file 또는 --hf_token_prompt 권장.")
+    parser.add_argument("--hf_token_file", default=None,
+                        help="HuggingFace token을 담은 파일 경로. 예: ~/.cache/huggingface/token")
+    parser.add_argument("--hf_token_prompt", action="store_true",
+                        help="실행 시 HuggingFace token을 숨김 입력으로 받음.")
+    parser.add_argument("--env_file", default=None,
+                        help="로드할 .env 파일 경로. 미지정 시 현재 디렉토리/스크립트 디렉토리의 상위에서 .env 자동 탐색.")
+    parser.add_argument("--no_env_file", action="store_true",
+                        help=".env 자동 로드를 비활성화.")
     args = parser.parse_args()
+    env_file_loaded = _load_env_file(args.env_file, disabled=args.no_env_file)
+    hf_token_source = _configure_hf_token(args)
 
     set_global_seeds(args.seed)
     os.makedirs(args.out, exist_ok=True)
@@ -356,7 +456,11 @@ def main():
         log_lines.append(line)
 
     args.device = _autodetect_device(args.device)
-    log(f"args: {vars(args)}")
+    log(f"args: {_redacted_args(args)}")
+    if env_file_loaded:
+        log(f".env loaded from {env_file_loaded}")
+    if hf_token_source:
+        log(f"HF token configured from {hf_token_source} (value hidden).")
 
     # ---- 1) data ----
     if args.csv:
@@ -401,7 +505,7 @@ def main():
     elif not cache_hit:
         try:
             log(f"Loading model: {args.model} (device={args.device})")
-            model, preprocess, tokenizer, info = load_model(args.model)
+            model, preprocess, tokenizer, info = load_model(args.model, hf_token=args.hf_token)
             encoder_state = {"model": model, "preprocess": preprocess, "tokenizer": tokenizer,
                               "info": info, "device": args.device}
             log(f"Model loaded: {info}")
@@ -428,7 +532,7 @@ def main():
         # 캐시 적중 → 텍스트 인코딩을 위해 모델만 로드
         try:
             log(f"캐시 적중 후 텍스트 인코더 로드: {args.model}")
-            model, preprocess, tokenizer, info = load_model(args.model)
+            model, preprocess, tokenizer, info = load_model(args.model, hf_token=args.hf_token)
             encoder_state = {"model": model, "preprocess": preprocess, "tokenizer": tokenizer,
                               "info": info, "device": args.device}
         except Exception as e:

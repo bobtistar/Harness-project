@@ -41,6 +41,40 @@ python run_experiment.py --model bioclip2 \
     --csv data/treeoflife_eval.csv \
     --image_root data/images \
     --device cuda --out ../results/bioclip2
+
+# Optional: use a HuggingFace token for authenticated downloads
+python run_experiment.py --model bioclip2 \
+    --csv data/treeoflife_eval.csv \
+    --image_root data/images \
+    --hf_token_file ~/.cache/huggingface/token \
+    --out ../results/bioclip2
+```
+
+## HuggingFace token via `.env`
+
+You can also put the token in a local `.env` file at the repository root or in
+this `code/` directory:
+
+```bash
+HF_TOKEN=hf_your_token_here
+# or:
+HUGGING_FACE_HUB_TOKEN=hf_your_token_here
+```
+
+`run_experiment.py` automatically searches upward for `.env`. The repository
+`.gitignore` excludes `.env` and `.env.*`, so the token should stay local.
+
+```bash
+python run_experiment.py --model bioclip2 \
+    --csv ~/CUB_200_2011/cub_taxonomy.csv \
+    --image_root ~/CUB_200_2011/images \
+    --out ../results/bioclip2
+```
+
+To use a non-default env file:
+
+```bash
+python run_experiment.py --env_file /path/to/.env --model bioclip2 ...
 ```
 
 ## Expected outputs (in `--out`)
