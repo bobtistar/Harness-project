@@ -47,12 +47,6 @@
 - **이유**: BioCLIP1 (10M 학습) vs BioCLIP2 (214M)로 *scale 효과* 분리. "효과가 데이터 규모와 함께 강해지나" 추가 spot 결과.
 - **컴퓨트**: ~20분 GPU
 
-#### TODO 5. C5 처리 결정
-- [ ] **옵션 A (워크샵 추천)**: C5를 main result에서 제거, appendix로 강등. "preliminary text-free probe — 본격 검증은 future work" 1줄 처리.
-- [ ] **옵션 B**: LoRA r=8 + 20 epoch으로 강화. [models/proposed_textfree.py](code/models/proposed_textfree.py) 의 LinearAdapter를 LoRA로 교체.
-- **컴퓨트**: A는 0.5일 문서 작업 / B는 코드 1일 + GPU 4-6시간
-- **추천**: A. 워크샵 페이지 분량에서 B는 부담 큼.
-
 ---
 
 ## Week 2 — 페이퍼 작성 (5-7일)
@@ -68,7 +62,7 @@
 - [ ] 3 contributions 정리:
   1. CUB-200 (Aves)에서 hierarchical prompt가 *species가 아닌 genus/family/order rank에서* 우세함
   2. 텍스트 없이도 BioCLIP2 image embedding에 분류학이 z=121.7로 잠재 (OpenCLIP 대비 X배 강함)
-  3. 6-condition ablation으로 *구조 > 순서 > 어휘* 위계를 raw silhouette drop으로 정량화
+  3. 5-condition ablation으로 *구조 > 순서 > 어휘* 위계를 raw silhouette drop으로 정량화
 - **소요**: 0.5일
 
 #### TODO 7. Introduction
@@ -80,7 +74,7 @@
 
 #### TODO 8. Method
 - [ ] [03_method.md](../05_draft/03_method.md) 리라이트
-- [ ] 6 conditions 정의 (실제 prompt 예시 포함, *Cardinalis cardinalis* 같은 1 종으로)
+- [ ] 5 conditions 정의 (실제 prompt 예시 포함, *Cardinalis cardinalis* 같은 1 종으로)
 - [ ] silhouette, paired permutation, bootstrap CI 정의 (수식)
 - [ ] 분량 1페이지 이내로 압축
 - **소요**: 1일
@@ -89,9 +83,9 @@
 - [ ] [05_results.md](../05_draft/05_results.md) 리라이트
 - [ ] **Figure 1**: rank-level silhouette bar chart (species/genus/family/order × C0/C1) — *"역전" 패턴* 시각화
 - [ ] **Figure 2**: latent taxonomy probe histogram — 실제 silhouette vs 50 random permutation 분포. BioCLIP2 / OpenCLIP / (BioCLIP1) 3-panel
-- [ ] **Figure 3**: 6-condition raw silhouette drop bar chart — C3 절벽 추락 강조
+- [ ] **Figure 3**: 5-condition raw silhouette drop bar chart — C3 절벽 추락 강조
 - [ ] **Table 1**: 모델 비교 (OpenCLIP / BioCLIP1 / BioCLIP2) × silhouette·latent z-score
-- [ ] **Table 2**: 6 conditions raw means (intra_var, inter_margin, silhouette)
+- [ ] **Table 2**: 5 conditions raw means (intra_var, inter_margin, silhouette)
 - [ ] 각 figure에 1문장 caption + 본문에서 1문단 해석
 - **소요**: 2일 (figure 1일 + 본문 1일)
 
@@ -100,9 +94,8 @@
 - [ ] Limitation 섹션 (reviewer 선제 대응):
   - "Single domain (Aves); higher Linnaean ranks degenerate" → cross-domain future work
   - "Preservation ratio originally planned but discarded due to negative denominator; raw drops reported instead"
-  - "C5 text-free baseline is a 5-epoch linear adapter — lower bound only"
   - "Latent probe z-score may include train-set memorization; truly-unseen-taxonomy validation as future work"
-- [ ] Future work: 5-domain meta-analysis (RQ4 원래 plan), C5 LoRA 강화, BioCLIP 변종 비교
+- [ ] Future work: 5-domain meta-analysis (RQ4 원래 plan), BioCLIP 변종 비교
 - **소요**: 1일
 
 ### P1 — 폴리시
@@ -128,7 +121,6 @@ TODO 1 (OpenCLIP)    ┐
 TODO 2 (bootstrap)   ├─→ TODO 9 (Figure 1,2,3 데이터)
 TODO 3 (ratio 폐기)  ┘
 TODO 4 (BioCLIP1)    ─→ TODO 9 (Table 1 3-model 비교)
-TODO 5 (C5 결정)     ─→ TODO 10 (limitation 문구)
 
 TODO 6 (Title/Abstract) → TODO 7 (Intro) → TODO 8,9,10
                                             ↓
@@ -160,7 +152,6 @@ TODO 6 (Title/Abstract) → TODO 7 (Intro) → TODO 8,9,10
 - [ ] TODO 2 — bootstrap 교체
 - [ ] TODO 3 — ratio 폐기, 문서 정리
 - [ ] TODO 4 — BioCLIP1 baseline
-- [ ] TODO 5 — C5 처리 결정 (A 또는 B)
 
 ### Week 2 (작성)
 - [ ] TODO 6 — Title/Abstract
@@ -175,16 +166,13 @@ TODO 6 (Title/Abstract) → TODO 7 (Intro) → TODO 8,9,10
 
 ## 결정해야 할 것 (작업 시작 전 확정)
 
-1. **TODO 5 — C5는 옵션 A (appendix 강등) vs 옵션 B (LoRA 강화)**
-   - 워크샵이면 A 추천. "text-free로도 가능"을 main claim에 넣으려면 B.
-
-2. **Target venue 확정**
+1. **Target venue 확정**
    - NeurIPS Workshops on AI4Science (보통 9-10월 deadline)
    - CVPR FGVC Workshop (보통 3-4월 deadline)
    - ICCV Workshop on Animal AI (보통 7-8월 deadline)
    - deadline 보고 우선순위 / page budget 조정 필요
 
-3. **Latent probe leakage caveat 깊이**
+2. **Latent probe leakage caveat 깊이**
    - BioCLIP2가 CUB-200 학습 셋에 포함되었을 가능성 (TreeOfLife에 CUB 포함) → z=121.7이 일부 memorization. 어떤 톤으로 limitation에 넣을지 (단순 future work 언급 vs 별도 robustness 분석).
 
 ---

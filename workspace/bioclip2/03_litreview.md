@@ -48,7 +48,7 @@
 | Paper | Year | Approach | Key Result | Relevance |
 |-------|------|----------|------------|-----------|
 | Zhang et al. "Use All The Labels: A Hierarchical Multi-Label Contrastive Learning Framework" (arXiv:2204.13207) — HiMulCon / HiConE / HiMulConE | 2022 | Anchor-positive 거리에 label-tree 거리 기반 페널티(level-dependent penalty + hierarchy-constraint enforcing loss) | Multi-label dataset에서 self-sup 및 sup baseline 상회 | **계층 contrastive 손실의 원형(prototype)**; BioCLIP2의 per-rank contrastive 설계 직접 영감원 |
-| Kokilepersaud et al. "Taxes Are All You Need" (IEEE ICIP 2024, arXiv:2406.06848) | 2024 | Supervised contrastive loss에 taxonomy 거리 weight를 직접 부여 | 의료·noisy 환경에서 +7% | RQ3 C5 (text-free hierarchical InfoNCE) 조건의 *직접* baseline; 이미지-이미지 hierarchical contrastive를 수행하는 가장 가까운 선행 연구 |
+| Kokilepersaud et al. "Taxes Are All You Need" (IEEE ICIP 2024, arXiv:2406.06848) | 2024 | Supervised contrastive loss에 taxonomy 거리 weight를 직접 부여 | 의료·noisy 환경에서 +7% | Text-free hierarchical contrastive의 대표 사례 — 본 연구가 *prompt-side ablation*에 집중하기로 한 결정의 비교 baseline (future work에서 image-side 직접 학습으로 확장 가능) |
 | Zhang et al. "Instances and Labels: Hierarchy-aware Joint Supervised Contrastive Learning" (arXiv:2310.05128) | 2023 | Hierarchical multi-label text classification에 instance+label joint contrastive | NLP HMTC SOTA | NLP-side 참고; 본 연구 직접 baseline 아님 |
 | Geng et al. "HiCLIP" (ICLR'23) | 2023 | Image patch와 text token을 *unsupervised*로 hierarchy-aware attention 통해 그룹화; CLIP backbone 수정 | YFCC15M에서 CLIP 대비 +13.1% avg acc | RQ2의 잠재 구조 가설을 직접 지지: 명시적 hierarchy supervision 없이 attention만으로 계층 구조 발견 가능. *그러나* taxonomy 정렬은 평가하지 않음 |
 
@@ -94,7 +94,7 @@
 |-------|------|----------|------------|-----------|
 | Nickel & Kiela "Poincaré Embeddings" (NIPS'17, arXiv:1705.08039) | 2017 | 심볼릭 데이터를 Poincaré ball에 임베딩 | Euclidean 대비 적은 차원으로 계층 보존 | Hyperbolic 패러다임의 원형. Scope 외(out-of-scope 후속 연구)이지만 본 연구의 "기하 조직" 해석을 보완하는 이론 근거 |
 | Desai et al. "MERU: Hyperbolic Image-Text Representations" (ICML'23) | 2023 | CLIP-style 학습을 hyperbolic space에서 + entailment cone loss | CLIP 동등 성능 + 명시적 partial-order | Euclidean BioCLIP2가 *암묵적으로* 보이는 계층을 MERU가 *명시적으로* 강제. RQ2 결과 해석 시 비교 baseline |
-| Pal et al. "HyCoCLIP / Compositional Entailment Learning" (ICLR'25 Oral, arXiv:2410.06912) | 2024 | Image box + text box 계층을 hyperbolic contrastive + entailment로 결합 | Compositional, retrieval, hierarchical 모두 개선 | 본 연구의 RQ3 C5(text-free hierarchical contrastive)와 design 유사. C5 결과 해석에 필수 비교 |
+| Pal et al. "HyCoCLIP / Compositional Entailment Learning" (ICLR'25 Oral, arXiv:2410.06912) | 2024 | Image box + text box 계층을 hyperbolic contrastive + entailment로 결합 | Compositional, retrieval, hierarchical 모두 개선 | Geometry-organizer 가설의 후속 검증(hyperbolic alternative) 후보 |
 | Matsubara & Tomohiro "PHyCLIP" (ICLR'26, arXiv:2510.08919) | 2025 | ℓ₁-product of hyperbolic factors — 계층 + 합성성 동시 표현 | Single-space 대비 우세, interpretable structure | 후속 연구 비교군; 본 연구의 scope에서는 제외(out-of-scope), but "geometry-organizer" 가설의 향후 발전 방향 |
 
 ## Per-RQ Coverage
@@ -111,8 +111,8 @@
 
 ### RQ3 (Information-channel vs Geometry-organizer counterfactual)
 - **가장 가까운 선행 연구**: **WaffleCLIP (Roth et al. ICCV'23)** — random-character/random-word descriptor가 LLM descriptor와 거의 동등한 성능. *우리 가설의 강력한 간접 증거*. 그러나 (a) bio 도메인 미적용, (b) *계층 구조 보존-vs-파괴* 변수 미설계, (c) embedding geometry 직접 측정 없음.
-- **공백**: "랜덤 토큰이지만 계층 구조(7-rank ordering)는 보존"(C2) vs "정상 어휘지만 계층 셔플"(C3)을 직접 대조한 연구 **없음**. Text-free hierarchical contrastive (C5)의 가장 가까운 사례는 Kokilepersaud et al. 2024(Taxes Are All You Need) — taxonomy-weighted SupCon이지만 *image-image only*로 ablation으로서의 비교 직접 가능.
-- **우리의 기여**: 이 RQ가 본 연구의 **가장 큰 novelty**. 6개 prompt 조건(C0–C5)의 통제 실험은 선행 연구에서 누구도 단일 framework로 수행하지 않음.
+- **공백**: "랜덤 토큰이지만 계층 구조(7-rank ordering)는 보존"(C2) vs "정상 어휘지만 계층 셔플"(C3)을 직접 대조한 연구 **없음**.
+- **우리의 기여**: 이 RQ가 본 연구의 **가장 큰 novelty**. 5개 prompt 조건(C0–C4)의 통제 실험은 선행 연구에서 누구도 단일 framework로 수행하지 않음. Text-free hierarchical contrastive(예: Kokilepersaud et al. 2024)는 본 연구 *scope 외*로 두고 prompt-side ablation에 집중한다.
 
 ### RQ4 (도메인 일반화 — Aves, Insecta, Plantae, Fungi, Actinopterygii)
 - **가까운 선행 연구**: BIOSCAN-CLIP (Gong et al. 2024) — 곤충 도메인에 독립 학습된 bio-VLM. Hyperbolic Multimodal for Bio Taxonomies (Gong et al. 2025) — 도메인 일반화 가능성.
@@ -142,7 +142,6 @@
 | **CHiLS** | Novack et al. ICML'23, `acmi-lab/CHILS` | 공개 | 즉시 | RQ1의 hierarchical prompt 대안 비교 |
 | **HAPrompts** | Liang & Davis 2024 | 공개 (arXiv 첨부) | 보통 — LLM 호출 필요 | RQ1·RQ2 보조 비교 (better mistakes metric) |
 | **BIOSCAN-CLIP / CLIBD** | Gong et al. 2024, `bioscan-ml/CLIBD` | 공개 | 즉시 | RQ4 Insecta 도메인 cross-model |
-| **Simple linear-probe ablation** (직접 구현) | — | — | trivial | RQ3 C5 (text-free hierarchical InfoNCE) 자체 구현, Kokilepersaud et al. 2024 손실 함수 채택 |
 | **Hierarchical Cross-Entropy (HXE)** | Bertinetto et al. CVPR'20 | 공개 (GitHub `fiveai/making-better-mistakes`) | 즉시 | RQ1·RQ4의 "better mistakes" metric 표준 구현 |
 
 ### 측정 metric 표준 구현

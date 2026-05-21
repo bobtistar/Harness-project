@@ -11,10 +11,19 @@
 - **Preprocessing**:
   - 이미지 resize 224×224, center crop, OpenCLIP normalize.
   - 7-rank label 부착 (GBIF 캐시 `cub_gbif_cache.json`, 1회 호출 후 영구 캐시).
-- **Split**: BioCLIP2는 **frozen evaluation**이므로 train/val 분리 없이 전체 11,788 images를 평가에 사용. C5 adapter도 동일 데이터에서 5 epoch fine-tune (lower-bound 추정용).
+- **Split**: BioCLIP2는 **frozen evaluation**이므로 train/val 분리 없이 전체 11,788 images를 평가에 사용.
 
-### Future work: 더 큰 범위
-- TreeOfLife-10M / TreeOfLife-200M (BioCLIP/BioCLIP2 학습 셋), iNat21 cross-domain — 본 실행에서는 데이터·컴퓨트 부족으로 미사용. plan.md Exp4 참조.
+### Secondary (실제 실행): Rare Species (multi-phylum)
+
+- **Source**: 본 연구에서 구축한 *희소종 evaluation subset* (`code/rare_species/taxonomy.csv` + `images/`). 여러 phylum/class에 걸친 희소종 400개를 샘플링.
+- **Scale**: **400 species × 11,983 images**, 종당 평균 ≈ 30 images. CUB-200과 달리 multi-phylum 분포(예: Animalia 내 Chordata + Arthropoda + Mollusca 등). **kingdom rank는 여전히 단일값(Animalia 가능성 높음)**이지만 phylum/class/order/family/genus rank는 모두 검증 가능.
+- **Taxonomy 부착**: GBIF API + 본 연구 파이프라인. 7-rank Linnaean taxonomy 자동 매핑.
+- **Preprocessing**: CUB-200과 동일 (224×224 center crop, OpenCLIP normalize).
+- **Split**: frozen evaluation, train/val 분리 없이 전체 11,983 images 사용.
+- **목적**: CUB-200의 *single-class(Aves) confound* 해소. 동일 protocol(Exp1·Exp2·Exp3)을 multi-phylum 환경에서 반복해 RQ1/RQ2의 상위 rank 효과를 직접 검증.
+
+### Future work: 나머지 도메인
+- BIOSCAN-1M(Insecta), PlantNet300K(Plantae), iNat21(Fungi), FishNet(Actinopterygii) — 본 실행에서는 데이터·컴퓨트 부족으로 미사용. plan.md Exp4 참조.
 
 ## 2. Models
 
@@ -23,7 +32,6 @@
 | **BioCLIP2 ViT-L/14** | `hf:imageomics/bioclip-2` (embedding_dim=768) | Yes (frozen) | **Yes** |
 | BioCLIP ViT-B/16 | `imageomics/bioclip` HF | Yes | No (본 실행은 BioCLIP2만) |
 | OpenCLIP ViT-L/14 (laion2b_s32b_b82k) | `open_clip_torch` | Yes | **Yes** (cross-model baseline 비교용) |
-| C5 adapter | 자체 구현 (`models/proposed_textfree.py`): linear D→D + L2 norm + LCA-weighted InfoNCE | Light fine-tuned (5 epoch, lr=1e-4 AdamW) | **Yes** |
 
 ## 3. Metrics (정확한 정의)
 
@@ -45,10 +53,6 @@
 $$\rho_x = \frac{M(C_x) - M(C_0)}{M(C_1) - M(C_0)}$$
 seed별 paired ratio → bootstrap 95% CI (B=1000). **분모 (C1−C0) 부호가 음수일 때는 비율 해석이 뒤집힘 — 본 실행 결과에서 이 상황이 발생함 (results.md 참조).**
 
-### C5 Loss: LCA-weighted hierarchical InfoNCE
-$$L_i = -\sum_j \frac{w_{ij}}{\sum_k w_{ik}} \log \frac{\exp(s_{ij}/\tau)}{\sum_k \exp(s_{ik}/\tau)}, \quad w_{ij} = \mathrm{LCA\_depth}(y_i, y_j) / 7$$
-($\tau = 0.07$, 자기 자신은 weight=0)
-
 ## 4. Baselines & Conditions
 
 | Condition | 정의 |
@@ -58,7 +62,6 @@ $$L_i = -\sum_j \frac{w_{ij}}{\sum_k w_{ik}} \log \frac{\exp(s_{ij}/\tau)}{\sum_
 | **C2** random-token hierarchy | `"a photo of tax0 tax1 tax2 tax3 tax4 tax5 {species_id_token}"` (7 tokens, 동일 길이, 구조 보존) |
 | **C3** shuffled hierarchy | C1의 상위 6 rank 라벨을 다른 종에서 임의 추출하여 교체 (구조 파괴) |
 | **C4** word-bag hierarchy | C1의 7개 라벨을 매 호출마다 random permute (순서 제거, 어휘 보존) |
-| **C5** text-free InfoNCE | linear adapter + LCA-weighted hierarchical InfoNCE, 5 epoch, lr=1e-4 AdamW |
 
 ## 5. Ablations
 
@@ -66,7 +69,6 @@ $$L_i = -\sum_j \frac{w_{ij}}{\sum_k w_{ik}} \log \frac{\exp(s_{ij}/\tau)}{\sum_
 |----------|------|--------|
 | Prompt structure (C2 vs C3) | 구조 보존 vs 파괴 효과 분리 | **완료** |
 | Order vs vocabulary (C1 vs C4) | 어휘만 보존, 순서 제거 효과 | **완료** |
-| Text vs no-text (C1 vs C5) | 텍스트 encoder의 역할 격리 | **완료** |
 | Per-rank evaluation | species…order rank별 효과 분해 | **완료** |
 | Random-taxonomy permutation | 잠재 구조 유의성 검정 (50 permutations) | **완료** |
 
@@ -91,7 +93,7 @@ $$L_i = -\sum_j \frac{w_{ij}}{\sum_k w_{ik}} \log \frac{\exp(s_{ij}/\tau)}{\sum_
   - 자세한 버전은 `code/requirements.txt`
 - **모델 가중치**: HuggingFace `imageomics/bioclip-2` (ViT-L/14, embedding_dim=768)
 - **배치 설정**: batch_size=128, num_workers=4, AMP(float16) 활성화
-- **재현성**: `numpy.random.default_rng(seed)`, `torch.manual_seed(seed)`, CuDNN deterministic 활성화. 5 seeds × 6 conditions.
+- **재현성**: `numpy.random.default_rng(seed)`, `torch.manual_seed(seed)`, CuDNN deterministic 활성화. 5 seeds × 5 conditions.
 - **임베딩 캐시**: `results/cub200_bioclip2/img_emb.npz` — 11,788×768 image embedding 1회 인코딩 후 재사용.
 
 ### 단계별 소요 시간 (run_log.txt 기반)
@@ -101,7 +103,7 @@ $$L_i = -\sum_j \frac{w_{ij}}{\sum_k w_{ik}} \log \frac{\exp(s_{ij}/\tau)}{\sum_
 | 11,788 images 인코딩 | 14:52:26 → 14:53:09 | 43초 |
 | Exp1 (RQ1, 5 seeds × 2 cond) | 14:53:17 → 14:58:26 | 5분 9초 |
 | Exp2 (rank-level + permutation probe) | 14:58:26 → 15:04:09 | 5분 43초 |
-| Exp3 (5 seeds × 6 cond, C5 fine-tune 포함) | 15:04:09 → 15:30:09 | **26분** |
+| Exp3 (5 seeds × 5 cond) | 15:04:09 → 15:30:09 | **26분** |
 
 ### OpenCLIP ViT-L/14 run (cross-model baseline)
 
@@ -114,6 +116,18 @@ $$L_i = -\sum_j \frac{w_{ij}}{\sum_k w_{ik}} \log \frac{\exp(s_{ij}/\tau)}{\sum_
 | 누적 소요 시간 | 약 68분 (모델 로드 41초, 인코딩 2분 14초, Exp1 11분 52초, Exp2 11분 40초, Exp3 41분 48초) |
 | 임베딩 캐시 | `results/cub200_openclip-vitl14/img_emb_openclip-vitl14.npz` (11,788 × 768) |
 | 목적 | BioCLIP2 결과와의 cross-model 비교 (RQ4와는 별개; 동일 CUB-200 데이터에서 일반 도메인 vs 생물 도메인 사전학습 모델 비교) |
+
+### Rare Species × BioCLIP2 run (cross-dataset replication)
+
+| 항목 | 값 |
+|---|---|
+| 실행 일자 | 2026-05-21, 12:11:04 → 13:35:55 (약 85분) |
+| 모델 ID | `hf:imageomics/bioclip-2` (ViT-L/14, embedding_dim=768) — CUB-200과 동일 |
+| 데이터셋 | Rare Species, **400 species × 11,983 images** (multi-phylum) |
+| 디바이스 | cuda, AMP(float16), batch_size=64, num_workers=4 |
+| 단계별 소요 시간 | 모델 로드 34초, 인코딩 11분 8초, Exp1 12분 52초, Exp2 17분 30초, Exp3 42분 47초 |
+| 임베딩 캐시 | `results/rare_species_bioclip2/img_emb_bioclip2.npz` (11,983 × 768) |
+| 목적 | CUB-200의 *single-class(Aves) confound* 직접 해소. 동일 protocol을 multi-phylum 환경에서 반복해 (i) RQ1 형식 fail이 데이터셋 confound인지 BioCLIP2 species-level 포화인지 분리, (ii) phylum/class까지 검증 가능한 환경에서 H_geom의 trade-off 예측 직접 검정. |
 
 ## 8. Data Ethics & Licensing
 

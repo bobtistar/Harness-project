@@ -34,13 +34,13 @@
 - **Hypothesis (H1)**: 계층 구조 자체를 보존하되 텍스트 *내용*을 의미 없는 토큰으로 치환한 ablation(예: "kingdom_A phylum_B … species_Z" 같은 placeholder)에서도 hierarchical prompt의 geometric benefit의 *상당 부분*(≥ 50%)이 유지된다. 반대로 계층 구조를 *셔플*한(분류학적으로 일관되지 않은) 조건은 그 benefit이 ≤ 20%로 붕괴한다. 즉, 효과의 주된 원천은 텍스트 의미가 아니라 *구조적 supervision*이다.
 - **Null hypothesis (H0)**: Random-token hierarchy 조건이 flat baseline과 통계적으로 구분되지 않거나(즉, 텍스트 의미가 사라지면 효과도 사라진다 → 정보 채널 가설 지지), 또는 shuffled-hierarchy 조건이 정상 hierarchy와 구분되지 않는다(구조 무관 → 두 가설 모두 약화).
 - **Variables**
-  - Independent: Prompt 조건 ∈ {C0: flat species-only, C1: normal hierarchical, C2: random-token hierarchical (구조 보존, 내용 무의미), C3: shuffled hierarchical (계층 라벨을 같은 종 내에서 다른 종 것으로 교체, 구조 파괴), C4: hierarchical word-bag (계층 라벨을 무순서 bag-of-words로 제공, 순서 정보 제거), C5: text-free hierarchical contrastive (텍스트 인코더 우회, 이미지-이미지 hierarchical InfoNCE로 fine-tune)}.
+  - Independent: Prompt 조건 ∈ {C0: flat species-only, C1: normal hierarchical, C2: random-token hierarchical (구조 보존, 내용 무의미), C3: shuffled hierarchical (계층 라벨을 같은 종 내에서 다른 종 것으로 교체, 구조 파괴), C4: hierarchical word-bag (계층 라벨을 무순서 bag-of-words로 제공, 순서 정보 제거)}.
   - Dependent: RQ1의 세 지표(intra-class variance, inter-class margin, silhouette) + taxonomic retrieval LCA depth + hierarchy consistency error.
-  - Confounders to control: 토큰 수(C2는 정상 hierarchy와 동일 토큰 수), 평가 데이터, seed(C3 셔플에 대해 5개 seed 평균), C5는 동일 데이터·동일 에폭으로 fine-tune.
-- **Measurement**: 각 조건에서 RQ1 지표 측정. 효과 보존율 = (C_x - C0) / (C1 - C0) 로 정의. C2, C5의 보존율과 C3, C4의 보존율을 비교. 95% bootstrap CI로 보존율 간 차이 검정.
-- **Proposed Method (candidate)**: BioCLIP2 frozen 체크포인트를 기본으로, C1-C4는 zero-shot prompt swap, C5는 텍스트 인코더 없이 이미지-이미지 hierarchical contrastive head를 light fine-tuning(LoRA 또는 linear adapter). 모든 조건에서 동일 평가 프로토콜.
-- **Success threshold**: **Semantic-organizer 가설 채택 조건** — (i) C2 보존율 ≥ 50% (95% CI 하한 ≥ 30%), AND (ii) C3 보존율 ≤ 20% (95% CI 상한 ≤ 40%), AND (iii) C5 보존율 ≥ 50%. 세 조건 모두 충족하면 H1 강한 증거. 둘 충족 시 약한 증거로 보고.
-- **Falsification condition**: C2 보존율 < 30% → 정보 채널 가설 지지(텍스트 내용이 필수). 또는 C3 보존율 > 50% → 계층 구조 자체가 무관(다른 메커니즘). 또는 C5 보존율 < 20% → 텍스트 anchor가 필수 매개로, "텍스트는 단지 조직자"라는 주장 약화. 위 중 하나라도 발생하면 claim 3 (semantic organizer) 기각 또는 약화.
+  - Confounders to control: 토큰 수(C2는 정상 hierarchy와 동일 토큰 수), 평가 데이터, seed(C3 셔플에 대해 5개 seed 평균).
+- **Measurement**: 각 조건에서 RQ1 지표 측정. 효과 보존율 = (C_x - C0) / (C1 - C0) 로 정의. C2의 보존율과 C3, C4의 보존율을 비교. 95% bootstrap CI로 보존율 간 차이 검정.
+- **Proposed Method (candidate)**: BioCLIP2 frozen 체크포인트를 기본으로, C1-C4 모두 zero-shot prompt swap으로 평가. 모든 조건에서 동일 평가 프로토콜.
+- **Success threshold**: **Semantic-organizer 가설 채택 조건** — (i) C2 보존율 ≥ 50% (95% CI 하한 ≥ 30%), AND (ii) C3 보존율 ≤ 20% (95% CI 상한 ≤ 40%). 두 조건 모두 충족하면 H1 강한 증거. 하나만 충족 시 약한 증거로 보고.
+- **Falsification condition**: C2 보존율 < 30% → 정보 채널 가설 지지(텍스트 내용이 필수). 또는 C3 보존율 > 50% → 계층 구조 자체가 무관(다른 메커니즘). 위 중 하나라도 발생하면 claim 3 (semantic organizer) 기각 또는 약화.
 
 ## RQ4: RQ1-3에서 관찰된 geometric reorganization 효과는 분류군 도메인(조류·곤충·식물·균류·어류)에 걸쳐 일관되게 나타나는가, 아니면 특정 도메인에 국한되는가?
 - **Type**: Descriptive / Generalization
