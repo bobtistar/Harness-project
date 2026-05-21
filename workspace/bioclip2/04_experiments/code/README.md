@@ -42,6 +42,14 @@ python run_experiment.py --model bioclip2 \
     --image_root data/images \
     --device cuda --out ../results/bioclip2
 
+# 5) Rare Species with OpenCLIP ViT-L/14
+MODEL=openclip-vitl14 BATCH_SIZE=128 AMP=1 DEVICE=cuda \
+    bash run_rare_species.sh
+
+# 6) Rare Species with both OpenCLIP ViT-L/14 and BioCLIP2
+# BioCLIP2 can read HF_TOKEN from the environment/.env, or pass HF_TOKEN_FILE.
+HF_TOKEN_FILE=token bash run_rare_species_models.sh
+
 # Optional: use a HuggingFace token for authenticated downloads
 python run_experiment.py --model bioclip2 \
     --csv data/treeoflife_eval.csv \
@@ -84,6 +92,19 @@ exp1_geometry.json          # RQ1 metrics + paired permutation p-values
 exp2_rank_levels.json       # RQ2 per-rank silhouette + latent taxonomy probe
 exp3_counterfactuals.json   # RQ3 preservation ratios for C2..C5
 run_log.txt
+```
+
+For the two-model Rare Species runner, outputs are written under:
+
+```
+../results/rare_species/openclip-vitl14/
+../results/rare_species/bioclip2/
+```
+
+After both runs finish:
+
+```bash
+python summarize_rare_species_results.py --results_root ../results/rare_species
 ```
 
 ## Expected runtime
