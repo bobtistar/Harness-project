@@ -11,6 +11,17 @@ argument-hint: <키워드 또는 주제> [auto]
 
 ---
 
+## 라우팅 정책 (비용 최적화)
+
+**시작 전 1회만** `.claude/_index.md`를 Read. 이 파일이 단계→agent→모델 매핑의 단일 source of truth. 본 명령은 다음을 보장:
+
+1. 매 단계에서 agent **1개만** 호출 (병렬 호출 금지).
+2. 이전 단계 산출물을 prompt에 **통째로 인용하지 않음**. 파일 경로만 전달.
+3. Agent 호출 시 `model` 필드를 명시하지 않음 — agent frontmatter의 기본 모델을 사용 (`_index.md` 표 참조).
+4. 사용자가 명시적으로 "opus로" 요청하지 않는 한 모델 escalation 금지.
+
+---
+
 ## 실행 절차
 
 ### Step 0 — 워크스페이스 준비
@@ -29,74 +40,61 @@ argument-hint: <키워드 또는 주제> [auto]
      "created_at": "<ISO 8601 현재 시각>"
    }
    ```
-5. 사용자에게 한 줄 보고: `워크스페이스 준비됨: workspace/<slug>/ (mode: auto|interactive)`
+5. `.claude/_index.md`를 1회 Read하여 라우팅 표를 확보.
+6. 사용자에게 한 줄 보고: `워크스페이스 준비됨: workspace/<slug>/ (mode: auto|interactive)`
+
+---
+
+### 공통 호출 패턴
+
+각 단계는 다음을 따른다:
+
+1. Agent 도구 호출:
+   - `subagent_type`: `_index.md`의 해당 stage agent
+   - `prompt`: **파일 경로 + slug + (필요 시) 언어**만. 산출물 본문 인용 금지.
+2. 완료 후 `state.json` 업데이트: `stage`, `stages_completed`.
+3. 한 줄 보고: `[N/7] <단계명> 완료 → <산출물 경로>`.
+4. interactive 모드면 다음 단계 진행 여부 한 줄 질문.
 
 ---
 
 ### Step 1 — 문제 정의
 
-Agent 도구 호출:
-- `subagent_type`: `problem-definer`
-- `prompt`: "키워드 '<원본>'에 대해 문제 정의를 작성하세요. 결과를 `workspace/<slug>/01_problem.md`에 저장하세요. 슬러그: `<slug>`"
-
-완료 후:
-- `state.json` 업데이트: `stage = "1_problem"`, `stages_completed += ["1_problem"]`
-- 한 줄 보고: `[1/7] 문제 정의 완료 → workspace/<slug>/01_problem.md`
-- interactive 모드면 "다음(RQ 수립) 진행?" 질문.
-
----
+- agent: `problem-definer`
+- prompt: `키워드 '<원본>' 에 대해 문제 정의 작성. slug: <slug>. 출력: workspace/<slug>/01_problem.md`
 
 ### Step 2 — RQ 수립
 
-Agent: `rq-formulator`
-- prompt: "`workspace/<slug>/01_problem.md`를 읽고 RQ들을 도출, `workspace/<slug>/02_rqs.md`에 저장하세요."
-
-state 업데이트, `[2/7] RQ 수립 완료` 보고, 게이트.
-
----
+- agent: `rq-formulator`
+- prompt: `workspace/<slug>/01_problem.md 를 읽고 RQ 도출. 출력: workspace/<slug>/02_rqs.md`
 
 ### Step 3 — 문헌 조사
 
-Agent: `lit-reviewer`
-- prompt: "`workspace/<slug>/01_problem.md`와 `02_rqs.md`를 읽고 문헌 조사를 수행, `03_litreview.md`에 저장. WebSearch를 적극 활용하세요."
-
-state 업데이트, `[3/7] 문헌 조사 완료` 보고, 게이트.
-
----
+- agent: `lit-reviewer`
+- prompt: `workspace/<slug>/01_problem.md 와 02_rqs.md 를 읽고 문헌 조사. WebSearch 적극 활용. 출력: workspace/<slug>/03_litreview.md`
 
 ### Step 4 — 실험
 
-Agent: `experiment-runner`
-- prompt: "`workspace/<slug>/02_rqs.md`와 `03_litreview.md`를 기반으로 실험을 설계하고 코드 골격을 작성, `workspace/<slug>/04_experiments/`에 저장. 환경이 허락하면 실행하세요."
-
-state 업데이트, `[4/7] 실험 완료` 보고, 게이트.
-
----
+- agent: `experiment-runner`
+- prompt: `workspace/<slug>/02_rqs.md 와 03_litreview.md 기반으로 실험 설계·코드. 가능하면 실행. 출력: workspace/<slug>/04_experiments/`
 
 ### Step 5 — 작성
 
-Agent: `paper-writer`
-- prompt: "`workspace/<slug>/`의 01~04 산출물을 종합하여 논문 드래프트를 `workspace/<slug>/05_draft/`에 작성하세요."
+- agent: `paper-writer`
+- prompt: `workspace/<slug>/ 의 01~04 산출물을 종합해 논문 드래프트 작성. 출력: workspace/<slug>/05_draft/`
+- 주의: paper-writer는 영어 default. 한국어 원하면 prompt에 "언어: 한국어" 추가.
 
-state 업데이트, `[5/7] 드래프트 완료` 보고, 게이트.
+### Step 6 — 리뷰 (Opus)
 
----
-
-### Step 6 — 리뷰
-
-Agent: `reviewer`
-- prompt: "`workspace/<slug>/05_draft/paper.md`(또는 섹션들)에 대해 3명의 가상 리뷰어 + 메타리뷰를 작성, `06_reviews.md`에 저장하세요."
-
-state 업데이트, `[6/7] 리뷰 완료` 보고, 게이트.
-
----
+- agent: `reviewer` (opus 모델 — `_index.md` 참조)
+- prompt: `workspace/<slug>/05_draft/paper.md 와 04_experiments/results.md 를 읽고 3 리뷰어 + 메타리뷰. 출력: workspace/<slug>/06_reviews.md`
 
 ### Step 7 — 리부탈
 
-Agent: `rebuttal-drafter`
-- prompt: "`workspace/<slug>/05_draft/`와 `06_reviews.md`를 읽고 리부탈을 작성, `07_rebuttal.md`에 저장하세요."
+- agent: `rebuttal-drafter`
+- prompt: `workspace/<slug>/05_draft/, 06_reviews.md, 04_experiments/ 를 읽고 리부탈. 출력: workspace/<slug>/07_rebuttal.md`
 
-state 업데이트: `stage = "7_done"`. 최종 보고:
+완료 시 `state.json`: `stage = "7_done"`. 최종 보고:
 ```
 [7/7] 파이프라인 완료
 산출물:
@@ -113,9 +111,10 @@ state 업데이트: `stage = "7_done"`. 최종 보고:
 
 ## 오류 처리
 
-- 어떤 단계 에이전트가 실패하면 `state.json`에 `last_error`를 기록하고 즉시 사용자에게 보고. 자동 재시도 금지.
-- 산출물이 비었거나 빈약하면 (예: 50줄 미만) 사용자에게 한 줄 경고 후 진행 여부 확인.
+- 어떤 단계 agent가 실패하면 `state.json`에 `last_error` 기록, 즉시 사용자 보고. 자동 재시도 금지.
+- 산출물이 50줄 미만이면 한 줄 경고 후 진행 여부 확인.
 - 이전 단계 산출물이 없으면 그 단계부터 다시 실행.
+- sonnet agent가 두 번 실패하면 사용자에게 "opus 재시도?" 한 줄 질문.
 
 ## 진행 보고 톤
 한 단계 = 한 줄. 길게 설명하지 말 것. 사용자는 산출물 파일을 직접 열어볼 수 있음.
