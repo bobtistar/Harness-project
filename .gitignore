@@ -44,7 +44,7 @@ data/
 datasets/
 .data/
 CUB_200*/
-
+conformal-prediction-finance/
 # Model / embedding / checkpoint files
 *.npz
 *.npy
@@ -74,3 +74,4 @@ CUB_200*/
 *.out
 *.toc
 *.synctex.gz
+*.toml
