@@ -1,124 +1,113 @@
-# Harness Project — AI 기반 논문 자동화 파이프라인
+# BioCLIP2 계층 프롬프트와 임베딩 기하학 분석
 
-**키워드 한 줄 → 투고 가능한 논문 드래프트**, 멀티에이전트 Claude 오케스트레이션으로 완전 자동화.
-
----
-
-## 개요
-
-이 저장소는 LLM 에이전트로 구동되는 엔드투엔드 학술 연구 파이프라인입니다. 연구 키워드 또는 주장 집합을 입력하면, 문제 정의부터 리버탈 초안 작성까지 논문 작성의 모든 단계를 자율적으로 수행합니다.
-
-파이프라인은 **생물 분류학을 위한 비전-언어 모델** 연구 주제를 통해 구축 및 검증되었습니다. 구체적으로는 BioCLIP2의 계층적 프롬프팅 메커니즘을 분석하는 연구를 전체 파이프라인 실행 예시로 사용했습니다.
+BioCLIP2의 hierarchical taxonomic prompt가 가져오는 성능 향상이 **추가 텍스트 정보** 때문인지, **임베딩 공간의 기하학적 재조직** 때문인지를 분리(disentangle)하는 진단적 연구입니다.
 
 ---
 
-## 파이프라인 단계
+## 연구 배경
 
-```
-키워드 입력
-  │
-  ├─ 01 문제 정의 (Problem Definer)     → 갭 분석, 범위, 성공 기준 도출
-  ├─ 02 연구 질문 (RQ Formulator)       → 반증 조건을 포함한 검증 가능한 가설 설계
-  ├─ 03 문헌 조사 (Lit Reviewer)        → 범주화된 선행연구 정리, 베이스라인 식별
-  ├─ 04 실험 설계 (Experiment Runner)   → 실험 설계, 코드 작성, 결과 테이블 생성
-  ├─ 05 논문 작성 (Paper Writer)        → 초록~결론 전체 드래프트 작성
-  ├─ 06 리뷰 (Reviewer)                 → 3인 가상 동료 리뷰 + 메타 리뷰 시뮬레이션
-  └─ 07 리버탈 (Rebuttal Drafter)       → 코멘트별 반박문 및 수정 약속 초안
-```
+**BioCLIP2** (arXiv:2505.23883, NeurIPS'25 Spotlight)는 2억 1,400만 장 규모의 생물 이미지에 계층적 대조 학습을 적용해 BioCLIP 대비 종 분류 정확도 +18.1%p를 달성했습니다. 그러나 논문에서 주장하는 "emergent properties"(종간 임베딩이 부리 크기·서식지 등 생태적 특성과 자연스럽게 정렬됨)는 정성적 시각화에 머물러 있으며, 다음 세 가지가 부재합니다.
 
-각 단계는 독립적인 Claude 서브에이전트로 구성되며, 이전 단계의 산출물을 파일로 직접 읽어 처리합니다. 오케스트레이터가 이전 결과를 프롬프트에 통째로 붙이지 않으므로 토큰 비용이 낮습니다.
-
----
-
-## 적용 연구 사례: BioCLIP2 계층 프롬프트와 임베딩 기하학
-
-### 연구 질문
-
-> BioCLIP2의 계층적 분류군 프롬프트가 가져오는 성능 향상은 *추가적인 텍스트 정보* 때문인가, 아니면 *임베딩 공간의 기하학적 재조직* 때문인가?
-
-세 가지 핵심 주장을 검증합니다.
-
-1. 계층 프롬프트는 임베딩 공간에서 **의미적 집약도**(클래스 내 분산 ↓, 클래스 간 마진 ↑)를 향상시킨다.
-2. 이 향상은 사전학습된 비전-언어 모델이 이미 **잠재적 분류학 구조**를 내재하고 있음을 시사한다.
-3. 계층 supervision은 단순히 텍스트 신호를 풍부하게 하는 것이 아니라, **임베딩 기하학의 의미적 조직자**로 기능한다.
-
-### 연구 배경 및 갭
-
-**BioCLIP2** (arXiv:2505.23883, NeurIPS'25 Spotlight)는 2억 1,400만 장 규모의 생물 이미지에 계층적 대조 학습을 적용해 BioCLIP 대비 종 분류 정확도를 18.1%p 향상시켰습니다. 그러나 "emergent properties" 주장(종간 임베딩이 부리 크기·서식지 등 생태적 특성과 정렬된다)은 정성적 시각화에 머물며, 다음 세 가지가 부재합니다.
-
-- flat-prompt 대조 실험
+- flat-prompt 대조 실험 (계층 프롬프트 vs 종명만 사용)
 - 기하학적 지표의 정량화
 - 반사실적(counterfactual) 프롬프트 ablation
 
-본 연구는 정확히 이 갭을 채웁니다.
+본 연구는 정확히 이 갭을 채우는 진단적 분석을 수행합니다.
 
-### 실험 설계
+---
 
-| 프롬프트 조건 | 설명 | 검증 대상 |
+## 핵심 주장과 검증 구조
+
+검증하는 세 가지 주장:
+
+> **Claim 1.** 계층 프롬프트는 임베딩 공간에서 의미적 집약도(클래스 내 분산 ↓, 클래스 간 마진 ↑)를 통계적으로 유의하게 향상시킨다.
+
+> **Claim 2.** 이 향상은 사전학습된 비전-언어 모델이 이미 잠재적 분류학 구조를 내재하고 있음을 시사한다. 즉, 계층 supervision은 새 구조를 *학습시키는* 것이 아니라 이미 있던 구조를 *꺼내 정렬*시킨다.
+
+> **Claim 3.** 계층 supervision은 단순히 텍스트 신호를 풍부하게 하는 것이 아니라, 임베딩 기하학의 **의미적 조직자(semantic organizer)** 로 기능한다.
+
+---
+
+## 연구 질문 (RQ)
+
+| RQ | 내용 | 유형 |
 |---|---|---|
-| C0 — flat | 종명만 사용 | 베이스라인 |
-| C1 — hierarchical | 7-rank 린네 분류 전체 시퀀스 | 전체 신호 |
-| C2 — random-token hierarchical | 구조 보존, 토큰 의미 제거 | 기하 조직 가설 |
-| C3 — shuffled hierarchical | 상위 분류 라벨을 다른 종 것으로 교체, 구조 파괴 | 정보 채널 가설 |
-| C4 — bag-of-words hierarchical | 유효 토큰이지만 순서 제거 | 시퀀스 구조 효과 |
-
-**결정 규칙**: C2 효과 보존율 ≥ 50% **AND** C3 효과 보존율 ≤ 20% → 기하 조직 가설 채택.
-
-### 평가 지표
-
-- 클래스 내 분산 (종별 평균 쌍별 코사인 거리)
-- 클래스 간 마진 (최근접 타 종 centroid 거리 / 클래스 내 표준편차)
-- 각 분류 rank에서의 실루엣 점수
-- 분류학적 검색 LCA 깊이 (top-k 결과의 평균 최저 공통 조상)
-- 계층 일관성 오류 ("better mistakes" 지표)
-
-5개 생물 도메인 전반에 걸쳐 평가: 조류(Aves), 곤충(Insecta), 식물(Plantae), 균류(Fungi), 조기어류(Actinopterygii).
-
-### 파이프라인 산출물 (전체 7단계 완료)
-
-| 단계 | 산출 파일 |
-|---|---|
-| 문제 정의 | `workspace/bioclip2/01_problem.md` |
-| 연구 질문 | `workspace/bioclip2/02_rqs.md` |
-| 문헌 조사 (24편) | `workspace/bioclip2/03_litreview.md` |
-| 가상 동료 리뷰 (3인 + 메타) | `workspace/bioclip2/06_reviews.md` |
-| 리버탈 | `workspace/bioclip2/07_rebuttal.md` |
+| RQ1 | 계층 프롬프트는 flat baseline 대비 embedding semantic compactness를 통계적으로 유의하게 향상시키는가? | 비교 실험 |
+| RQ2 | 기하 조직 효과는 분류 rank에 따라 어떻게 다르며, 계층 supervision 없이 학습된 일반 CLIP에서도 잠재 분류 구조가 존재하는가? | 설명적 분석 |
+| RQ3 | 효과의 원천이 "정보 채널"인가 "기하 조직"인가? (counterfactual ablation) | 인과적 분석 |
+| RQ4 | RQ1-3의 효과는 조류·곤충·식물·균류·어류 5개 도메인에서 일관되게 재현되는가? | 외부 타당도 검증 |
 
 ---
 
-## 프로젝트 구조
+## 실험 설계: Counterfactual Prompt Ablation
 
-```
-.claude/
-  _index.md          # 단계별 에이전트 라우팅 테이블
-  _common.md         # 전 에이전트 공통 규약
-  agents/            # 7개 단계별 에이전트 정의
-  commands/paper.md  # 파이프라인 진입점 (/paper 명령)
-workspace/<slug>/    # 실행 결과 산출물 (gitignore 대상)
-```
+핵심 실험은 텍스트 *내용*과 계층적 *구조*를 분리하는 5가지 프롬프트 조건입니다.
 
-**오케스트레이터 모델**: Claude Sonnet (저비용 라우팅)  
-**비판적 추론 에이전트** (Reviewer): Claude Opus  
-**나머지 에이전트**: Claude Sonnet
+| 조건 | 설명 | 목적 |
+|---|---|---|
+| C0 — flat | 종명만 사용 (`Passer domesticus`) | 베이스라인 |
+| C1 — hierarchical | 7-rank 린네 분류 전체 (`Animalia Chordata … Passer domesticus`) | 전체 신호 |
+| C2 — random-token | 계층 구조 보존 + 토큰 의미 제거 (`taxA taxB … taxG`) | 기하 조직 가설 검증 |
+| C3 — shuffled | 상위 분류 라벨을 다른 종 것으로 교체, 구조 파괴 | 정보 채널 가설 검증 |
+| C4 — bag-of-words | 유효 토큰이지만 순서 제거 | 시퀀스 순서 효과 분리 |
 
----
+**결정 규칙**
 
-## 사용법
+$$\rho_M(C_x) = \frac{\text{metric}(C_x) - \text{metric}(C_0)}{\text{metric}(C_1) - \text{metric}(C_0)}$$
 
-```bash
-# 전체 파이프라인 자동 실행
-/paper BioCLIP2 hierarchical prompts auto
-
-# 특정 단계만 재실행 (예: 드래프트 수정 후 리뷰 재실행)
-/paper --stage review <slug>
-```
+- $\rho(C_2) \geq 0.5$ **AND** $\rho(C_3) \leq 0.2$ → **기하 조직 가설 채택**
+- $\rho(C_2) < 0.3$ → 정보 채널 가설 지지
+- 그 외 → 불확정(inconclusive)
 
 ---
 
-## 참고 문헌
+## 평가 지표
 
-- Stevens et al., *BioCLIP: A Vision Foundation Model for the Tree of Life*, CVPR 2024 (Best Student Paper)
-- Gu, Stevens et al., *BioCLIP 2: Emergent Properties from Scaling Hierarchical Contrastive Learning*, arXiv:2505.23883, NeurIPS 2025 Spotlight
-- Novack et al., *CHiLS: Zero-Shot Image Classification with Hierarchical Label Sets*, ICML 2023
-- Liang & Davis, *HAPrompts: Making Better Mistakes in CLIP-Based Zero-Shot Classification*, arXiv:2503.02248
-- Zhang et al., *Use All The Labels: A Hierarchical Multi-Label Contrastive Learning Framework*, arXiv:2204.13207
+- **Intra-class variance** — 종별 평균 쌍별 코사인 거리 (클래스 내 응집도)
+- **Inter-class margin** — 최근접 타종 centroid 거리 / 클래스 내 표준편차
+- **Silhouette score** — 각 분류 rank(species → kingdom)에서 측정
+- **Taxonomic retrieval LCA depth** — top-k 검색 결과의 평균 최저 공통 조상 깊이
+- **Hierarchy consistency error** — "better mistakes" 지표
+
+5개 생물 도메인 전반 평가: **조류(Aves), 곤충(Insecta), 식물(Plantae), 균류(Fungi), 조기어류(Actinopterygii)**
+
+---
+
+## 관련 선행 연구
+
+| 논문 | 연도 | 핵심 기여 | 본 연구와의 관계 |
+|---|---|---|---|
+| Stevens et al. *BioCLIP* (CVPR'24 Best Student Paper) | 2024 | TreeOfLife-10M, 7-rank 계층 프롬프트 | 분석 대상 베이스라인 모델 |
+| Gu et al. *BioCLIP2* (NeurIPS'25 Spotlight) | 2025 | 214M 이미지, +18.1%p 종 분류 | 본 연구의 분석 대상 모델; 정량 진단 부재가 갭 |
+| Novack et al. *CHiLS* (ICML'23) | 2023 | 계층 label set으로 CLIP zero-shot 향상 | 프롬프트 측 baseline |
+| Liang & Davis *HAPrompts* (arXiv:2503.02248) | 2024 | LLM 생성 계층 프롬프트, "better mistakes" 목적 | RQ2 rank별 효과 비교 대상 |
+| Zhang et al. *HiMulCon* (arXiv:2204.13207) | 2022 | label-tree 거리 기반 계층 대조 손실 | BioCLIP2 학습 설계의 원형 |
+| Geng et al. *HiCLIP* (ICLR'23) | 2023 | supervision 없이 attention으로 계층 구조 발견 | RQ2 잠재 구조 가설의 직접 지지 근거 |
+
+---
+
+## 산출물
+
+```
+workspace/bioclip2/
+  01_problem.md     # 갭 분석, 범위, 성공 기준
+  02_rqs.md         # RQ1-4 가설 및 반증 조건
+  03_litreview.md   # 선행연구 24편 범주화 정리
+  06_reviews.md     # 가상 동료 리뷰 3인 + 메타 리뷰
+  07_rebuttal.md    # 리뷰 코멘트별 반박문
+```
+
+---
+
+## 연구 방법론: Harness 파이프라인
+
+본 연구는 **Harness** — 멀티에이전트 Claude 오케스트레이션 기반 논문 자동화 파이프라인 — 을 통해 수행되었습니다.
+
+키워드를 입력하면 7개의 전문화된 LLM 에이전트가 순차적으로 실행되며, 각 에이전트는 이전 단계의 산출물을 파일로 직접 읽어 처리합니다. 오케스트레이터가 산출물 전문을 프롬프트에 붙이지 않아 토큰 비용을 최소화합니다.
+
+```
+키워드 →  문제 정의  →  RQ 설계  →  문헌 조사  →  실험  →  논문 작성  →  리뷰  →  리버탈
+           (Sonnet)     (Sonnet)    (Sonnet)    (Sonnet)   (Sonnet)   (Opus)   (Sonnet)
+```
+
+> 본 BioCLIP2 연구는 위 파이프라인을 통해 문제 정의에서 리버탈 초안까지 전체 7단계를 자동 완료한 실제 실행 사례입니다.
