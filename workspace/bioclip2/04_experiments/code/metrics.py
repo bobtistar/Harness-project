@@ -7,27 +7,23 @@ Metrics
 - intra_class_variance     : mean within-class pairwise cosine distance (lower = better)
 - inter_class_margin       : nearest-other-centroid distance / within-class std (higher = better)
 - silhouette_cosine        : sklearn silhouette with cosine distance
-- alignment                : Wang & Isola 2020
 - uniformity               : Wang & Isola 2020
 - rankme                   : Garrido et al. 2023 (effective rank)
 - knn_purity_at_k          : taxonomic kNN purity
-- lca_depth_mean           : mean LCA depth of predicted vs gt species
-- mutual_information_cluster_rank : I(cluster ; rank-label)
 
 Statistical helpers
 -------------------
 - paired_permutation_test
 - bootstrap_ci
-- effect_preservation_ratio
 """
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 # Soft import sklearn so the module can be imported even if sklearn missing.
 try:
-    from sklearn.metrics import silhouette_score, mutual_info_score
+    from sklearn.metrics import silhouette_score
     from sklearn.neighbors import NearestNeighbors
     _SKLEARN_OK = True
 except Exception as e:  # pragma: no cover
@@ -96,14 +92,6 @@ def silhouette_cosine(Z: np.ndarray, y: np.ndarray) -> float:
     if len(classes) < 2 or counts.min() < 2:
         return float("nan")
     return float(silhouette_score(Z, y, metric="cosine"))
-
-
-def alignment(Z_pos_a: np.ndarray, Z_pos_b: np.ndarray, alpha: float = 2.0) -> float:
-    """Wang & Isola alignment: E_{positives} || f(x) - f(x+) ||^alpha."""
-    Z_pos_a = l2_normalize(Z_pos_a)
-    Z_pos_b = l2_normalize(Z_pos_b)
-    d = np.linalg.norm(Z_pos_a - Z_pos_b, axis=1)
-    return float((d ** alpha).mean())
 
 
 def uniformity(Z: np.ndarray, t: float = 2.0) -> float:
@@ -262,37 +250,6 @@ def plot_comparison_grid(
         plt.show()
 
 
-def lca_depth_mean(
-    pred_species: Sequence[str],
-    true_species: Sequence[str],
-    tax_table: Dict[str, List[str]],
-) -> float:
-    """Mean LCA depth in Linnaean tree.
-
-    tax_table maps species name -> [kingdom, phylum, class, order, family, genus, species]
-    Depth from root: kingdom=1, ..., species=7. LCA depth = #ranks shared from root.
-    """
-    depths: List[int] = []
-    for p, t in zip(pred_species, true_species):
-        if p not in tax_table or t not in tax_table:
-            continue
-        pp, tt = tax_table[p], tax_table[t]
-        d = 0
-        for a, b in zip(pp, tt):
-            if a == b:
-                d += 1
-            else:
-                break
-        depths.append(d)
-    return float(np.mean(depths)) if depths else float("nan")
-
-
-def mutual_information_cluster_rank(cluster_labels: np.ndarray, rank_labels: np.ndarray) -> float:
-    if not _SKLEARN_OK:
-        raise RuntimeError(f"sklearn not available: {_SKLEARN_ERR}")
-    return float(mutual_info_score(rank_labels, cluster_labels))
-
-
 # ---------------------------------------------------------------------------
 # Statistical helpers
 # ---------------------------------------------------------------------------
@@ -349,18 +306,6 @@ def bootstrap_ci(
         boots[i] = statistic(values[idx])
     lo, hi = np.percentile(boots, [100 * alpha / 2, 100 * (1 - alpha / 2)])
     return point, float(lo), float(hi)
-
-
-def effect_preservation_ratio(
-    metric_C0: float,
-    metric_C1: float,
-    metric_Cx: float,
-) -> float:
-    """ rho_x = (M(Cx) - M(C0)) / (M(C1) - M(C0)); returns NaN if denominator near 0."""
-    denom = metric_C1 - metric_C0
-    if abs(denom) < 1e-8:
-        return float("nan")
-    return (metric_Cx - metric_C0) / denom
 
 
 def cohens_d_paired(a: np.ndarray, b: np.ndarray) -> float:

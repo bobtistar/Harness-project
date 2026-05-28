@@ -37,9 +37,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from prompt_variants import generate_prompts, TaxonomyRecord, RANKS
 from metrics import (
     intra_class_variance, inter_class_margin, silhouette_cosine,
-    rankme, uniformity, alignment, knn_purity_at_k,
-    paired_permutation_test, bootstrap_ci, effect_preservation_ratio,
-    mutual_information_cluster_rank, cohens_d_paired,
+    rankme, uniformity, knn_purity_at_k,
+    paired_permutation_test, bootstrap_ci, cohens_d_paired,
     plot_embeddings, plot_comparison_grid,
 )
 from data_loader import get_toy_dataset, get_toy_images, load_real_dataset, RealDatasetSpec
