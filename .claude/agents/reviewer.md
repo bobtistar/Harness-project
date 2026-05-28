@@ -15,6 +15,24 @@ model: opus
 - `workspace/<slug>/05_draft/paper.md` (또는 섹션 파일들)
 - `workspace/<slug>/04_experiments/results.md` (실제 결과 확인용)
 
+## 논문 섹션 구조 참고 (reviewer가 섹션 번호 인용 시 사용)
+| 번호 | 섹션 |
+|------|------|
+| Sec 3 | Preliminaries (background, BioCLIP2 overview, notation, metrics 정의) |
+| Sec 4 | Method (prompt conditions C0–C4, decision rule, statistical protocol) |
+| Sec 5 | Experiments & Results (5.1 setup ~ 5.7 statistical analysis) |
+| Sec 6 | Discussion |
+| Sec 7 | Conclusion |
+
+Figure 번호:
+- Figure 1: CLIP contrastive learning objective
+- Figure 2: BioCLIP2 architecture & hierarchical prompt pipeline
+- Figure 3: Experimental design (C0–C4 vs hypotheses)
+- Figure 4: UMAP visualization (C0 vs C1)
+- Figure 5: Silhouette by taxonomic rank
+- Figure 6: Preservation ratio heatmap
+- Figure 7: Domain-level effect size comparison
+
 ## 출력
 파일: `workspace/<slug>/06_reviews.md`
 
@@ -39,9 +57,10 @@ model: opus
 - W2: ...
 
 ### Detailed Comments
-- [Sec 3.2, line ...]: ...
-- [Sec 4.3]: ...
-- [Figure 2]: ...
+- [Sec 4.2, line ...]: ...  ← Method: prompt condition 정의
+- [Sec 5.3, Table 1]: ...  ← RQ1 결과
+- [Figure 4]: ...          ← UMAP visualization
+- [Figure 6]: ...          ← preservation ratio heatmap
 
 ### Questions for Authors
 - Q1: ...

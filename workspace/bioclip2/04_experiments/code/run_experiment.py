@@ -40,6 +40,7 @@ from metrics import (
     rankme, uniformity, alignment, knn_purity_at_k,
     paired_permutation_test, bootstrap_ci, effect_preservation_ratio,
     mutual_information_cluster_rank, cohens_d_paired,
+    linear_probe_accuracy, plot_embeddings,
 )
 from data_loader import get_toy_dataset, get_toy_images, load_real_dataset, RealDatasetSpec
 from extract_embeddings import (
@@ -83,7 +84,7 @@ def fuse_image_text(img_emb: np.ndarray, txt_emb: np.ndarray, mode: str = "conca
     raise ValueError(mode)
 
 
-def geometric_metrics(Z: np.ndarray, y: np.ndarray) -> Dict[str, float]:
+def geometric_metrics(Z: np.ndarray, y: np.ndarray, seed: int = 42) -> Dict[str, float]:
     return {
         "intra_var": intra_class_variance(Z, y),
         "inter_margin": inter_class_margin(Z, y),
@@ -91,12 +92,42 @@ def geometric_metrics(Z: np.ndarray, y: np.ndarray) -> Dict[str, float]:
         "rankme": rankme(Z),
         "uniformity": uniformity(Z),
         "knn_purity@10": knn_purity_at_k(Z, y, k=min(10, max(1, len(Z) - 1))),
+        "linear_probe_acc": linear_probe_accuracy(Z, y, seed=seed),
     }
 
 
 # ---------------------------------------------------------------------------
 # Per-condition pipeline
 # ---------------------------------------------------------------------------
+
+def condition_embeddings(
+    cond: str,
+    records: List[TaxonomyRecord],
+    sample_records: List[TaxonomyRecord],
+    img_emb: np.ndarray,
+    encoder_state: Optional[dict],
+    rng: np.random.Generator,
+    mock: bool,
+    seed: int = 42,
+) -> np.ndarray:
+    if cond == "C5":
+        # text-free hierarchical InfoNCE — adapt image embeddings directly
+        tax_labels = [r.labels() for r in sample_records]
+        return train_C5_adapter(img_emb, tax_labels, epochs=5, lr=1e-4, seed=seed)
+
+    prompts = generate_prompts(sample_records, cond, rng)
+    if mock or encoder_state is None:
+        # Use a hashed mock so distinct prompt strings produce distinct vectors;
+        # this preserves the *information* dimension of the experiment but the
+        # absolute numbers are NOT meaningful.
+        txt_emb = mock_text_embeddings(prompts, dim=128, seed=seed)
+    else:
+        model = encoder_state["model"]
+        tokenizer = encoder_state["tokenizer"]
+        txt_emb = encode_texts(model, tokenizer, prompts, device=encoder_state["device"])
+
+    return fuse_image_text(img_emb, txt_emb, mode="concat_norm")
+
 
 def run_condition(
     cond: str,
@@ -107,45 +138,30 @@ def run_condition(
     encoder_state: Optional[dict],
     rng: np.random.Generator,
     mock: bool,
+    seed: int = 42,
 ) -> Dict[str, float]:
     """Run one prompt condition and return geometric metrics."""
-    if cond == "C5":
-        # text-free hierarchical InfoNCE — adapt image embeddings directly
-        tax_labels = [r.labels() for r in sample_records]
-        z_adapted = train_C5_adapter(img_emb, tax_labels, epochs=5, lr=1e-4, seed=42)
-        return geometric_metrics(z_adapted, labels)
-
-    prompts = generate_prompts(sample_records, cond, rng)
-    if mock or encoder_state is None:
-        # Use a hashed mock so distinct prompt strings produce distinct vectors;
-        # this preserves the *information* dimension of the experiment but the
-        # absolute numbers are NOT meaningful.
-        txt_emb = mock_text_embeddings(prompts, dim=128, seed=42)
-    else:
-        model = encoder_state["model"]
-        tokenizer = encoder_state["tokenizer"]
-        txt_emb = encode_texts(model, tokenizer, prompts, device=encoder_state["device"])
-
-    Z = fuse_image_text(img_emb, txt_emb, mode="concat_norm")
-    return geometric_metrics(Z, labels)
+    Z = condition_embeddings(cond, records, sample_records, img_emb, encoder_state, rng, mock, seed=seed)
+    return geometric_metrics(Z, labels, seed=seed)
 
 
 # ---------------------------------------------------------------------------
 # Experiment 1 (RQ1): flat vs hierarchical, with paired permutation test
 # ---------------------------------------------------------------------------
 
-def experiment_1(records, sample_records, labels, img_emb, encoder_state, mock, n_seeds=5):
+def experiment_1(records, sample_records, labels, img_emb, encoder_state, mock, n_seeds=5, seed: int = 42):
     results: Dict[str, dict] = {"C0": {}, "C1": {}, "stats": {}}
-    metric_keys = ["intra_var", "inter_margin", "silhouette", "rankme", "uniformity", "knn_purity@10"]
+    metric_keys = ["intra_var", "inter_margin", "silhouette", "rankme", "uniformity", "knn_purity@10",
+                   "linear_probe_acc"]
     per_seed = {"C0": {k: [] for k in metric_keys}, "C1": {k: [] for k in metric_keys}}
 
     for s_idx in range(n_seeds):
         rng = np.random.default_rng(42 + s_idx)
         # add tiny noise to image embeddings to simulate stochastic sampling
-        noise = 1e-3 * np.random.default_rng(s_idx).normal(0, 1, size=img_emb.shape)
+        noise = 1e-3 * np.random.default_rng(seed + s_idx).normal(0, 1, size=img_emb.shape)
         z = img_emb + noise.astype(img_emb.dtype)
         for cond in ["C0", "C1"]:
-            m = run_condition(cond, records, sample_records, labels, z, encoder_state, rng, mock)
+            m = run_condition(cond, records, sample_records, labels, z, encoder_state, rng, mock, seed=seed)
             for k in metric_keys:
                 per_seed[cond][k].append(m[k])
 
@@ -155,11 +171,15 @@ def experiment_1(records, sample_records, labels, img_emb, encoder_state, mock, 
                           for k in metric_keys}
 
     # paired permutation test on each metric
-    rng_stat = np.random.default_rng(7)
+    rng_perm = np.random.default_rng(7)
+    rng_boot = np.random.default_rng(13)
     for k in metric_keys:
         a = np.array(per_seed["C1"][k])
         b = np.array(per_seed["C0"][k])
-        stat = paired_permutation_test(a, b, n_perm=1000, rng=rng_stat)
+        stat = paired_permutation_test(a, b, n_perm=1000, rng=rng_perm)
+        _, ci_lo, ci_hi = bootstrap_ci(a - b, n_boot=1000, rng=rng_boot)
+        stat["ci_lo"] = ci_lo
+        stat["ci_hi"] = ci_hi
         d = cohens_d_paired(a, b)
         results["stats"][k] = {**stat, "cohens_d": d}
 
@@ -182,12 +202,11 @@ def experiment_1(records, sample_records, labels, img_emb, encoder_state, mock, 
 # Experiment 2 (RQ2): rank-level effect, single model variant
 # ---------------------------------------------------------------------------
 
-def experiment_2(records, sample_records, labels, img_emb, tax_table, encoder_state, mock):
+def experiment_2(records, sample_records, labels, img_emb, tax_table, encoder_state, mock, seed: int = 42):
     """For each rank in {species..kingdom}, recompute labels at that rank and measure
     silhouette/MI/kNN purity. Compares C0 vs C1 prompt at each rank.
     """
     results: Dict[str, dict] = {}
-    species_to_idx = {r.species: i for i, r in enumerate(records)}
 
     rng = np.random.default_rng(42)
     for rank_idx, rank_name in enumerate(RANKS):
@@ -204,7 +223,7 @@ def experiment_2(records, sample_records, labels, img_emb, tax_table, encoder_st
         results[rank_name] = {}
         for cond in ["C0", "C1"]:
             m = run_condition(cond, records, sample_records, rank_int, img_emb,
-                              encoder_state, rng, mock)
+                              encoder_state, rng, mock, seed=seed)
             results[rank_name][cond] = m
         results[rank_name]["delta_silhouette_C1_minus_C0"] = (
             results[rank_name]["C1"]["silhouette"] - results[rank_name]["C0"]["silhouette"]
@@ -230,16 +249,16 @@ def experiment_2(records, sample_records, labels, img_emb, tax_table, encoder_st
 # Experiment 3 (RQ3): 6-condition counterfactual ablation
 # ---------------------------------------------------------------------------
 
-def experiment_3(records, sample_records, labels, img_emb, encoder_state, mock, n_seeds=5):
-    metric_keys = ["intra_var", "inter_margin", "silhouette"]
+def experiment_3(records, sample_records, labels, img_emb, encoder_state, mock, n_seeds=5, seed: int = 42):
+    metric_keys = ["intra_var", "inter_margin", "silhouette", "linear_probe_acc"]
     conditions = ["C0", "C1", "C2", "C3", "C4", "C5"]
     per_seed = {c: {k: [] for k in metric_keys} for c in conditions}
     for s_idx in range(n_seeds):
         rng = np.random.default_rng(100 + s_idx)
-        noise = 1e-3 * np.random.default_rng(s_idx).normal(0, 1, size=img_emb.shape)
+        noise = 1e-3 * np.random.default_rng(seed + s_idx).normal(0, 1, size=img_emb.shape)
         z = img_emb + noise.astype(img_emb.dtype)
         for cond in conditions:
-            m = run_condition(cond, records, sample_records, labels, z, encoder_state, rng, mock)
+            m = run_condition(cond, records, sample_records, labels, z, encoder_state, rng, mock, seed=seed)
             for k in metric_keys:
                 per_seed[cond][k].append(m[k])
 
@@ -412,11 +431,16 @@ def main():
                         help="Use toy synthetic dataset (8 species).")
     parser.add_argument("--mock", action="store_true",
                         help="Skip model loading entirely; use deterministic hashed mock embeddings.")
+    parser.add_argument("--allow_mock_fallback", action="store_true",
+                        help="Allow fallback to mock embeddings if real model loading fails.")
     parser.add_argument("--csv", default=None,
                         help="Path to metadata CSV for real-data run.")
     parser.add_argument("--image_root", default=None)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--n_seeds", type=int, default=5)
+    parser.add_argument("--visualize", action="store_true",
+                        help="UMAP/t-SNE 시각화를 PNG로 저장.")
+    parser.add_argument("--vis_method", default="umap", choices=["umap", "tsne"])
     parser.add_argument("--device", default=None,
                         help="'cuda' / 'mps' / 'cpu'. 미지정 시 CUDA -> MPS -> CPU 순서로 자동 감지.")
     parser.add_argument("--out", default=os.path.join(os.path.dirname(__file__), "..", "results"))
@@ -457,6 +481,9 @@ def main():
 
     args.device = _autodetect_device(args.device)
     log(f"args: {_redacted_args(args)}")
+    result_files = ["exp1_geometry.json", "exp2_rank_levels.json", "exp3_counterfactuals.json"]
+    if any(os.path.exists(os.path.join(args.out, name)) for name in result_files):
+        log("WARN: output directory already contains results — files will be overwritten.")
     if env_file_loaded:
         log(f".env loaded from {env_file_loaded}")
     if hf_token_source:
@@ -524,7 +551,11 @@ def main():
                 np.savez_compressed(args.cache_emb, img_emb=img_emb, labels=labels)
                 log(f"  임베딩 캐시 저장: {args.cache_emb}")
         except Exception as e:
-            log(f"WARN: real model load failed ({type(e).__name__}: {e}); falling back to MOCK.")
+            warning = f"WARN: real model load failed ({type(e).__name__}: {e})"
+            print(f"\033[1m{warning}\033[0m", file=sys.stderr)
+            if not args.allow_mock_fallback:
+                sys.exit(1)
+            log(f"{warning}; falling back to MOCK.")
             args.mock = True
             img_emb = mock_image_embeddings(labels, n_class=len(records), dim=128,
                                             intra_noise=0.45, seed=args.seed)
@@ -541,15 +572,23 @@ def main():
     # ---- 3) Experiment 1: RQ1 ----
     log("== Experiment 1 (RQ1): hierarchical vs flat ==")
     exp1 = experiment_1(records, sample_records, labels, img_emb, encoder_state,
-                         mock=args.mock, n_seeds=args.n_seeds)
+                         mock=args.mock, n_seeds=args.n_seeds, seed=args.seed)
     with open(os.path.join(args.out, "exp1_geometry.json"), "w") as f:
         json.dump(exp1, f, indent=2)
     log(f"exp1 success: {exp1['success_criteria']}")
+    if args.visualize:
+        for cond in ["C0", "C1"]:
+            Z_vis = condition_embeddings(
+                cond, records, sample_records, img_emb, encoder_state,
+                np.random.default_rng(args.seed), args.mock, seed=args.seed
+            )
+            plot_embeddings(Z_vis, labels, title=f"Exp1_{cond}", method=args.vis_method,
+                            save_path=os.path.join(args.out, f"vis_exp1_{cond}.png"), seed=args.seed)
 
     # ---- 4) Experiment 2: RQ2 ----
     log("== Experiment 2 (RQ2): per-rank silhouette + latent taxonomy probe ==")
     exp2 = experiment_2(records, sample_records, labels, img_emb, tax_table,
-                         encoder_state, mock=args.mock)
+                         encoder_state, mock=args.mock, seed=args.seed)
     with open(os.path.join(args.out, "exp2_rank_levels.json"), "w") as f:
         json.dump(exp2, f, indent=2)
     log(f"exp2 latent probe: {exp2.get('latent_taxonomy_probe')}")
@@ -557,12 +596,36 @@ def main():
     # ---- 5) Experiment 3: RQ3 counterfactual ablation ----
     log("== Experiment 3 (RQ3): counterfactual ablation C0..C5 ==")
     exp3 = experiment_3(records, sample_records, labels, img_emb, encoder_state,
-                         mock=args.mock, n_seeds=args.n_seeds)
+                         mock=args.mock, n_seeds=args.n_seeds, seed=args.seed)
     with open(os.path.join(args.out, "exp3_counterfactuals.json"), "w") as f:
         json.dump(exp3, f, indent=2)
     log(f"exp3 semantic_organizer_supported: {exp3['semantic_organizer_supported']}")
+    if args.visualize:
+        for cond in ["C0", "C1", "C2", "C3", "C4", "C5"]:
+            Z_vis = condition_embeddings(
+                cond, records, sample_records, img_emb, encoder_state,
+                np.random.default_rng(args.seed), args.mock, seed=args.seed
+            )
+            plot_embeddings(Z_vis, labels, title=f"Exp3_{cond}", method=args.vis_method,
+                            save_path=os.path.join(args.out, f"vis_exp3_{cond}.png"), seed=args.seed)
 
     # ---- save log ----
+    import subprocess
+    try:
+        git_hash = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"],
+                                           stderr=subprocess.DEVNULL).decode().strip()
+    except Exception:
+        git_hash = "unknown"
+    log(f"git_hash: {git_hash}")
+
+    import importlib
+    for pkg in ["numpy", "torch", "open_clip", "sklearn"]:
+        try:
+            ver = importlib.import_module(pkg).__version__
+        except Exception:
+            ver = "n/a"
+        log(f"  {pkg}: {ver}")
+
     with open(log_path, "w", encoding="utf-8") as f:
         f.write("\n".join(log_lines))
     log(f"Done. Outputs in {os.path.abspath(args.out)}")

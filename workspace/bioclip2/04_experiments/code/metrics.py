@@ -30,6 +30,8 @@ import numpy as np
 try:
     from sklearn.metrics import silhouette_score, mutual_info_score
     from sklearn.neighbors import NearestNeighbors
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.model_selection import train_test_split
     _SKLEARN_OK = True
 except Exception as e:  # pragma: no cover
     _SKLEARN_OK = False
@@ -150,6 +152,75 @@ def knn_purity_at_k(Z: np.ndarray, y: np.ndarray, k: int = 10) -> float:
     nbr = idx[:, 1:]
     purity = (y[nbr] == y[:, None]).mean(axis=1)
     return float(purity.mean())
+
+
+def linear_probe_accuracy(
+    Z: np.ndarray,
+    y: np.ndarray,
+    test_size: float = 0.2,
+    seed: int = 42,
+) -> float:
+    if not _SKLEARN_OK:
+        raise RuntimeError(f"sklearn not available: {_SKLEARN_ERR}")
+    classes, counts = np.unique(y, return_counts=True)
+    n_test = int(np.ceil(len(y) * test_size))
+    if len(classes) < 2 or counts.min() < 2 or n_test < len(classes):
+        return float("nan")
+    try:
+        Z_train, Z_test, y_train, y_test = train_test_split(
+            Z, y, test_size=test_size, stratify=y, random_state=seed
+        )
+    except ValueError:
+        return float("nan")
+    clf = LogisticRegression(max_iter=1000, random_state=seed)
+    clf.fit(Z_train, y_train)
+    return float(clf.score(Z_test, y_test))
+
+
+def plot_embeddings(
+    Z: np.ndarray,
+    y: np.ndarray,
+    title: str = "",
+    method: str = "umap",
+    save_path: Optional[str] = None,
+    seed: int = 42,
+) -> None:
+    if method == "umap":
+        try:
+            import umap
+        except ImportError as e:
+            raise RuntimeError("umap-learn not installed") from e
+        reducer = umap.UMAP(n_components=2, random_state=seed)
+        coords = reducer.fit_transform(Z)
+    elif method == "tsne":
+        if not _SKLEARN_OK:
+            raise RuntimeError(f"sklearn not available: {_SKLEARN_ERR}")
+        from sklearn.manifold import TSNE
+        perplexity = min(30, len(Z) // 4)
+        if perplexity < 1:
+            perplexity = 1
+        coords = TSNE(n_components=2, random_state=seed, perplexity=perplexity).fit_transform(Z)
+    else:
+        raise ValueError(method)
+
+    import matplotlib.pyplot as plt
+
+    classes = np.unique(y)
+    cmap = plt.get_cmap("tab20")
+    plt.figure(figsize=(7, 5))
+    for i, c in enumerate(classes):
+        mask = y == c
+        label = str(c) if len(classes) <= 20 else None
+        plt.scatter(coords[mask, 0], coords[mask, 1], s=18, color=cmap(i % 20), label=label)
+    plt.title(title)
+    if len(classes) <= 20:
+        plt.legend()
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=160)
+        plt.close()
+    else:
+        plt.show()
 
 
 def lca_depth_mean(

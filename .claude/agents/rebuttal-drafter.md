@@ -59,10 +59,12 @@ model: sonnet
 | Section | Change | Triggered by |
 |---------|--------|--------------|
 | Abstract | 수치 명확화 | R3.W1 |
-| 3.2 | 가정 명시 추가 | R1.W1, R2.W1 |
-| 4.3 | 새 ablation 표 (Table 6) | R3.W2 |
-| 5.4 | 통계 검정 추가 | R1.W3 |
-| 6.2 | 한계 솔직 보고 | R2.W2 |
+| Sec 3.4 | Preliminaries: metric 정의 명확화 | R1.W1, R2.W1 |
+| Sec 4.2 | Method: C3 prompt 설계 근거 보강 | R1.W3 |
+| Sec 4.3 | Method: decision rule 2D plane 표 추가 | R1.W1 |
+| Sec 5.5 | Experiments & Results: counterfactual ablation 새 결과 | R3.W2 |
+| Sec 5.7 | Experiments & Results: 통계 검정 Cliff's δ 추가 | R1.W2 |
+| Sec 6.2 | Discussion: 한계 솔직 보고 | R2.W2 |
 
 ---
 
