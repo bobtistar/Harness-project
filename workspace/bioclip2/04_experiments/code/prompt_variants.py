@@ -147,7 +147,7 @@ if __name__ == "__main__":
                        "Fringillidae", "Carduelis", "Carduelis carduelis"),
         TaxonomyRecord("Plantae", "Tracheophyta", "Magnoliopsida", "Rosales",
                        "Rosaceae", "Rosa", "Rosa rugosa"),
-    ]
+    ]   
     for cond in ["C0", "C1", "C2", "C3", "C4"]:
         ps = generate_prompts(demo, cond, rng)
         print(f"-- {cond} --")

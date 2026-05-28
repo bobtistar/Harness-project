@@ -12,7 +12,6 @@ Metrics
 - rankme                   : Garrido et al. 2023 (effective rank)
 - knn_purity_at_k          : taxonomic kNN purity
 - lca_depth_mean           : mean LCA depth of predicted vs gt species
-- hierarchy_distance       : Bertinetto-style tree-edge distance
 - mutual_information_cluster_rank : I(cluster ; rank-label)
 
 Statistical helpers
@@ -30,8 +29,6 @@ import numpy as np
 try:
     from sklearn.metrics import silhouette_score, mutual_info_score
     from sklearn.neighbors import NearestNeighbors
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.model_selection import train_test_split
     _SKLEARN_OK = True
 except Exception as e:  # pragma: no cover
     _SKLEARN_OK = False
@@ -152,29 +149,6 @@ def knn_purity_at_k(Z: np.ndarray, y: np.ndarray, k: int = 10) -> float:
     nbr = idx[:, 1:]
     purity = (y[nbr] == y[:, None]).mean(axis=1)
     return float(purity.mean())
-
-
-def linear_probe_accuracy(
-    Z: np.ndarray,
-    y: np.ndarray,
-    test_size: float = 0.2,
-    seed: int = 42,
-) -> float:
-    if not _SKLEARN_OK:
-        raise RuntimeError(f"sklearn not available: {_SKLEARN_ERR}")
-    classes, counts = np.unique(y, return_counts=True)
-    n_test = int(np.ceil(len(y) * test_size))
-    if len(classes) < 2 or counts.min() < 2 or n_test < len(classes):
-        return float("nan")
-    try:
-        Z_train, Z_test, y_train, y_test = train_test_split(
-            Z, y, test_size=test_size, stratify=y, random_state=seed
-        )
-    except ValueError:
-        return float("nan")
-    clf = LogisticRegression(max_iter=1000, random_state=seed)
-    clf.fit(Z_train, y_train)
-    return float(clf.score(Z_test, y_test))
 
 
 def plot_embeddings(
@@ -310,28 +284,6 @@ def lca_depth_mean(
             else:
                 break
         depths.append(d)
-    return float(np.mean(depths)) if depths else float("nan")
-
-
-def hierarchy_distance(
-    pred_species: Sequence[str],
-    true_species: Sequence[str],
-    tax_table: Dict[str, List[str]],
-) -> float:
-    """Bertinetto-style: number of tree-edges between pred and true (lower = better).
-    For 7-rank flat hierarchy: dist = 2 * (7 - LCA depth)."""
-    depths: List[int] = []
-    for p, t in zip(pred_species, true_species):
-        if p not in tax_table or t not in tax_table:
-            continue
-        pp, tt = tax_table[p], tax_table[t]
-        d = 0
-        for a, b in zip(pp, tt):
-            if a == b:
-                d += 1
-            else:
-                break
-        depths.append(2 * (7 - d))
     return float(np.mean(depths)) if depths else float("nan")
 
 

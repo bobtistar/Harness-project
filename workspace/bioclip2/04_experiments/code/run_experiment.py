@@ -40,7 +40,7 @@ from metrics import (
     rankme, uniformity, alignment, knn_purity_at_k,
     paired_permutation_test, bootstrap_ci, effect_preservation_ratio,
     mutual_information_cluster_rank, cohens_d_paired,
-    linear_probe_accuracy, plot_embeddings, plot_comparison_grid,
+    plot_embeddings, plot_comparison_grid,
 )
 from data_loader import get_toy_dataset, get_toy_images, load_real_dataset, RealDatasetSpec
 from extract_embeddings import (
@@ -91,7 +91,6 @@ def geometric_metrics(Z: np.ndarray, y: np.ndarray, seed: int = 42) -> Dict[str,
         "rankme": rankme(Z),
         "uniformity": uniformity(Z),
         "knn_purity@10": knn_purity_at_k(Z, y, k=min(10, max(1, len(Z) - 1))),
-        "linear_probe_acc": linear_probe_accuracy(Z, y, seed=seed),
     }
 
 
@@ -145,8 +144,7 @@ def run_condition(
 
 def experiment_1(records, sample_records, labels, img_emb, encoder_state, mock, n_seeds=5, seed: int = 42):
     results: Dict[str, dict] = {"C0": {}, "C1": {}, "stats": {}}
-    metric_keys = ["intra_var", "inter_margin", "silhouette", "rankme", "uniformity", "knn_purity@10",
-                   "linear_probe_acc"]
+    metric_keys = ["intra_var", "inter_margin", "silhouette", "rankme", "uniformity", "knn_purity@10"]
     per_seed = {"C0": {k: [] for k in metric_keys}, "C1": {k: [] for k in metric_keys}}
     vis_embeddings: Dict[str, np.ndarray] = {}
 
@@ -255,7 +253,7 @@ def experiment_2(records, sample_records, labels, img_emb, tax_table, encoder_st
 # ---------------------------------------------------------------------------
 
 def experiment_3(records, sample_records, labels, img_emb, encoder_state, mock, n_seeds=5, seed: int = 42):
-    metric_keys = ["intra_var", "inter_margin", "silhouette", "linear_probe_acc"]
+    metric_keys = ["intra_var", "inter_margin", "silhouette"]
     conditions = ["C0", "C1", "C2", "C3", "C4"]
     per_seed = {c: {k: [] for k in metric_keys} for c in conditions}
     vis_embeddings: Dict[str, np.ndarray] = {}
