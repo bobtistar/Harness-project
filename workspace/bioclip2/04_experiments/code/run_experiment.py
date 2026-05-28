@@ -40,13 +40,12 @@ from metrics import (
     rankme, uniformity, alignment, knn_purity_at_k,
     paired_permutation_test, bootstrap_ci, effect_preservation_ratio,
     mutual_information_cluster_rank, cohens_d_paired,
-    linear_probe_accuracy, plot_embeddings,
+    linear_probe_accuracy, plot_embeddings, plot_comparison_grid,
 )
 from data_loader import get_toy_dataset, get_toy_images, load_real_dataset, RealDatasetSpec
 from extract_embeddings import (
     load_model, encode_images, encode_texts, mock_image_embeddings, mock_text_embeddings,
 )
-from models.proposed_textfree import train_C5_adapter
 
 
 # ---------------------------------------------------------------------------
@@ -110,11 +109,6 @@ def condition_embeddings(
     mock: bool,
     seed: int = 42,
 ) -> np.ndarray:
-    if cond == "C5":
-        # text-free hierarchical InfoNCE — adapt image embeddings directly
-        tax_labels = [r.labels() for r in sample_records]
-        return train_C5_adapter(img_emb, tax_labels, epochs=5, lr=1e-4, seed=seed)
-
     prompts = generate_prompts(sample_records, cond, rng)
     if mock or encoder_state is None:
         # Use a hashed mock so distinct prompt strings produce distinct vectors;
@@ -154,6 +148,7 @@ def experiment_1(records, sample_records, labels, img_emb, encoder_state, mock, 
     metric_keys = ["intra_var", "inter_margin", "silhouette", "rankme", "uniformity", "knn_purity@10",
                    "linear_probe_acc"]
     per_seed = {"C0": {k: [] for k in metric_keys}, "C1": {k: [] for k in metric_keys}}
+    vis_embeddings: Dict[str, np.ndarray] = {}
 
     for s_idx in range(n_seeds):
         rng = np.random.default_rng(42 + s_idx)
@@ -161,7 +156,10 @@ def experiment_1(records, sample_records, labels, img_emb, encoder_state, mock, 
         noise = 1e-3 * np.random.default_rng(seed + s_idx).normal(0, 1, size=img_emb.shape)
         z = img_emb + noise.astype(img_emb.dtype)
         for cond in ["C0", "C1"]:
-            m = run_condition(cond, records, sample_records, labels, z, encoder_state, rng, mock, seed=seed)
+            Z_cond = condition_embeddings(cond, records, sample_records, z, encoder_state, rng, mock, seed=seed)
+            m = geometric_metrics(Z_cond, labels, seed=seed)
+            if s_idx == n_seeds - 1:
+                vis_embeddings[cond] = Z_cond
             for k in metric_keys:
                 per_seed[cond][k].append(m[k])
 
@@ -195,6 +193,7 @@ def experiment_1(records, sample_records, labels, img_emb, encoder_state, mock, 
         "silhouette_abs_gain": float(sil_diff),
         "passes_RQ1_threshold": bool(success),
     }
+    results["_vis_embeddings"] = vis_embeddings
     return results
 
 
@@ -207,6 +206,7 @@ def experiment_2(records, sample_records, labels, img_emb, tax_table, encoder_st
     silhouette/MI/kNN purity. Compares C0 vs C1 prompt at each rank.
     """
     results: Dict[str, dict] = {}
+    vis_embeddings: Dict[str, dict] = {}
 
     rng = np.random.default_rng(42)
     for rank_idx, rank_name in enumerate(RANKS):
@@ -221,13 +221,17 @@ def experiment_2(records, sample_records, labels, img_emb, tax_table, encoder_st
             continue
 
         results[rank_name] = {}
+        rank_vis: Dict[str, np.ndarray] = {}
         for cond in ["C0", "C1"]:
-            m = run_condition(cond, records, sample_records, rank_int, img_emb,
-                              encoder_state, rng, mock, seed=seed)
+            Z_cond = condition_embeddings(cond, records, sample_records, img_emb,
+                                          encoder_state, rng, mock, seed=seed)
+            m = geometric_metrics(Z_cond, rank_int, seed=seed)
             results[rank_name][cond] = m
+            rank_vis[cond] = Z_cond
         results[rank_name]["delta_silhouette_C1_minus_C0"] = (
             results[rank_name]["C1"]["silhouette"] - results[rank_name]["C0"]["silhouette"]
         )
+        vis_embeddings[rank_name] = {"embeddings": rank_vis, "y": rank_int}
 
     # latent taxonomy probing: random-taxonomy permutation control at species rank
     rng2 = np.random.default_rng(7)
@@ -242,33 +246,38 @@ def experiment_2(records, sample_records, labels, img_emb, tax_table, encoder_st
         "random_taxonomy_std": float(np.std(perm_sil)),
         "z_score": float((real_sil - np.mean(perm_sil)) / (np.std(perm_sil) + 1e-8)),
     }
+    results["_vis_embeddings"] = vis_embeddings
     return results
 
 
 # ---------------------------------------------------------------------------
-# Experiment 3 (RQ3): 6-condition counterfactual ablation
+# Experiment 3 (RQ3): 5-condition counterfactual ablation
 # ---------------------------------------------------------------------------
 
 def experiment_3(records, sample_records, labels, img_emb, encoder_state, mock, n_seeds=5, seed: int = 42):
     metric_keys = ["intra_var", "inter_margin", "silhouette", "linear_probe_acc"]
-    conditions = ["C0", "C1", "C2", "C3", "C4", "C5"]
+    conditions = ["C0", "C1", "C2", "C3", "C4"]
     per_seed = {c: {k: [] for k in metric_keys} for c in conditions}
+    vis_embeddings: Dict[str, np.ndarray] = {}
     for s_idx in range(n_seeds):
         rng = np.random.default_rng(100 + s_idx)
         noise = 1e-3 * np.random.default_rng(seed + s_idx).normal(0, 1, size=img_emb.shape)
         z = img_emb + noise.astype(img_emb.dtype)
         for cond in conditions:
-            m = run_condition(cond, records, sample_records, labels, z, encoder_state, rng, mock, seed=seed)
+            Z_cond = condition_embeddings(cond, records, sample_records, z, encoder_state, rng, mock, seed=seed)
+            m = geometric_metrics(Z_cond, labels, seed=seed)
+            if s_idx == n_seeds - 1:
+                vis_embeddings[cond] = Z_cond
             for k in metric_keys:
                 per_seed[cond][k].append(m[k])
 
     means = {c: {k: float(np.mean(per_seed[c][k])) for k in metric_keys} for c in conditions}
     stds = {c: {k: float(np.std(per_seed[c][k])) for k in metric_keys} for c in conditions}
 
-    # Effect preservation ratios for C2, C3, C4, C5 relative to (C1 - C0)
+    # Effect preservation ratios for C2, C3, C4 relative to (C1 - C0)
     rng_boot = np.random.default_rng(7)
     preservation: Dict[str, Dict[str, dict]] = {}
-    for cond in ["C2", "C3", "C4", "C5"]:
+    for cond in ["C2", "C3", "C4"]:
         preservation[cond] = {}
         for k in metric_keys:
             # bootstrap over seeds (small n, but illustrative)
@@ -288,17 +297,16 @@ def experiment_3(records, sample_records, labels, img_emb, encoder_state, mock, 
     # success criteria: silhouette as the headline metric
     c2_sil = preservation["C2"]["silhouette"]
     c3_sil = preservation["C3"]["silhouette"]
-    c5_sil = preservation["C5"]["silhouette"]
     semantic_organizer_support = (
         (c2_sil["point"] >= 0.5 and c2_sil["ci_lo"] >= 0.3)
         and (c3_sil["point"] <= 0.2 and c3_sil["ci_hi"] <= 0.4)
-        and (c5_sil["point"] >= 0.5)
     )
     return {
         "means_by_condition": means,
         "stds_by_condition": stds,
         "preservation_ratio": preservation,
         "semantic_organizer_supported": bool(semantic_organizer_support),
+        "_vis_embeddings": vis_embeddings,
     }
 
 
@@ -573,41 +581,61 @@ def main():
     log("== Experiment 1 (RQ1): hierarchical vs flat ==")
     exp1 = experiment_1(records, sample_records, labels, img_emb, encoder_state,
                          mock=args.mock, n_seeds=args.n_seeds, seed=args.seed)
+    exp1_vis_emb = exp1.pop("_vis_embeddings", {})
     with open(os.path.join(args.out, "exp1_geometry.json"), "w") as f:
         json.dump(exp1, f, indent=2)
     log(f"exp1 success: {exp1['success_criteria']}")
     if args.visualize:
-        for cond in ["C0", "C1"]:
-            Z_vis = condition_embeddings(
-                cond, records, sample_records, img_emb, encoder_state,
-                np.random.default_rng(args.seed), args.mock, seed=args.seed
-            )
+        for cond, Z_vis in exp1_vis_emb.items():
             plot_embeddings(Z_vis, labels, title=f"Exp1_{cond}", method=args.vis_method,
                             save_path=os.path.join(args.out, f"vis_exp1_{cond}.png"), seed=args.seed)
+        if exp1_vis_emb:
+            plot_comparison_grid(
+                exp1_vis_emb, labels,
+                title=f"Exp1 C0 vs C1 ({args.model})",
+                method=args.vis_method,
+                save_path=os.path.join(args.out, "vis_exp1_compare.png"),
+                seed=args.seed,
+            )
 
     # ---- 4) Experiment 2: RQ2 ----
     log("== Experiment 2 (RQ2): per-rank silhouette + latent taxonomy probe ==")
     exp2 = experiment_2(records, sample_records, labels, img_emb, tax_table,
                          encoder_state, mock=args.mock, seed=args.seed)
+    exp2_vis_emb = exp2.pop("_vis_embeddings", {})
     with open(os.path.join(args.out, "exp2_rank_levels.json"), "w") as f:
         json.dump(exp2, f, indent=2)
     log(f"exp2 latent probe: {exp2.get('latent_taxonomy_probe')}")
+    if args.visualize:
+        for rank_name, payload in exp2_vis_emb.items():
+            plot_comparison_grid(
+                payload["embeddings"], payload["y"],
+                title=f"Exp2 {rank_name} ({args.model})",
+                method=args.vis_method,
+                save_path=os.path.join(args.out, f"vis_exp2_{rank_name}.png"),
+                seed=args.seed,
+            )
 
     # ---- 5) Experiment 3: RQ3 counterfactual ablation ----
-    log("== Experiment 3 (RQ3): counterfactual ablation C0..C5 ==")
+    log("== Experiment 3 (RQ3): counterfactual ablation C0..C4 ==")
     exp3 = experiment_3(records, sample_records, labels, img_emb, encoder_state,
                          mock=args.mock, n_seeds=args.n_seeds, seed=args.seed)
+    exp3_vis_emb = exp3.pop("_vis_embeddings", {})
     with open(os.path.join(args.out, "exp3_counterfactuals.json"), "w") as f:
         json.dump(exp3, f, indent=2)
     log(f"exp3 semantic_organizer_supported: {exp3['semantic_organizer_supported']}")
     if args.visualize:
-        for cond in ["C0", "C1", "C2", "C3", "C4", "C5"]:
-            Z_vis = condition_embeddings(
-                cond, records, sample_records, img_emb, encoder_state,
-                np.random.default_rng(args.seed), args.mock, seed=args.seed
-            )
+        for cond, Z_vis in exp3_vis_emb.items():
             plot_embeddings(Z_vis, labels, title=f"Exp3_{cond}", method=args.vis_method,
                             save_path=os.path.join(args.out, f"vis_exp3_{cond}.png"), seed=args.seed)
+        if exp3_vis_emb:
+            plot_comparison_grid(
+                exp3_vis_emb, labels,
+                title=f"Exp3 Ablation ({args.model})",
+                method=args.vis_method,
+                save_path=os.path.join(args.out, "vis_exp3_compare.png"),
+                seed=args.seed,
+            )
 
     # ---- save log ----
     import subprocess

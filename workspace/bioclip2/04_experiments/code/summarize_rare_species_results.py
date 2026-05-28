@@ -45,7 +45,7 @@ def _row_for_model(results_root: Path, model: str) -> Dict[str, Any]:
         "latent_z_score": latent["z_score"],
         "c2_sil_preservation": preservation["C2"]["silhouette"]["point"],
         "c3_sil_preservation": preservation["C3"]["silhouette"]["point"],
-        "c5_sil_preservation": preservation["C5"]["silhouette"]["point"],
+        "c4_sil_preservation": preservation["C4"]["silhouette"]["point"],
         "semantic_organizer_supported": exp3["semantic_organizer_supported"],
     }
 
@@ -61,7 +61,7 @@ def _print_markdown(rows: List[Dict[str, Any]]) -> None:
         "latent_z_score",
         "c2_sil_preservation",
         "c3_sil_preservation",
-        "c5_sil_preservation",
+        "c4_sil_preservation",
         "semantic_organizer_supported",
     ]
     print("| " + " | ".join(columns) + " |")

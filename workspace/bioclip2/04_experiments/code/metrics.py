@@ -184,6 +184,7 @@ def plot_embeddings(
     method: str = "umap",
     save_path: Optional[str] = None,
     seed: int = 42,
+    label_names: Optional[Dict[int, str]] = None,
 ) -> None:
     if method == "umap":
         try:
@@ -206,19 +207,83 @@ def plot_embeddings(
     import matplotlib.pyplot as plt
 
     classes = np.unique(y)
+    n_cls = len(classes)
+    w = 7 + max(0, (n_cls - 10) * 0.15)
     cmap = plt.get_cmap("tab20")
-    plt.figure(figsize=(7, 5))
+    plt.figure(figsize=(w, 5))
     for i, c in enumerate(classes):
         mask = y == c
-        label = str(c) if len(classes) <= 20 else None
+        label = label_names.get(int(c), str(c)) if label_names else str(c)
         plt.scatter(coords[mask, 0], coords[mask, 1], s=18, color=cmap(i % 20), label=label)
     plt.title(title)
-    if len(classes) <= 20:
+    if n_cls > 20:
+        plt.legend(loc="upper left", bbox_to_anchor=(1.05, 1))
+    else:
         plt.legend()
     plt.tight_layout()
     if save_path:
-        plt.savefig(save_path, dpi=160)
+        plt.savefig(save_path, dpi=160, bbox_inches="tight")
         plt.close()
+    else:
+        plt.show()
+
+
+def plot_comparison_grid(
+    embeddings_by_cond: Dict[str, np.ndarray],
+    y: np.ndarray,
+    title: str = "",
+    method: str = "umap",
+    save_path: Optional[str] = None,
+    seed: int = 42,
+    label_names: Optional[Dict[int, str]] = None,
+) -> None:
+    """여러 조건의 임베딩을 같은 그림에 서브플롯으로 비교."""
+    import matplotlib.pyplot as plt
+
+    conditions = list(embeddings_by_cond.keys())
+    n = len(conditions)
+    ncols = min(3, n)
+    nrows = int(np.ceil(n / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 4 * nrows))
+    axes = np.asarray(axes).reshape(-1)
+    classes = np.unique(y)
+    cmap = plt.get_cmap("tab20")
+
+    for ax_idx, cond in enumerate(conditions):
+        Z = embeddings_by_cond[cond]
+        if method == "umap":
+            try:
+                import umap
+            except ImportError as e:
+                raise RuntimeError("umap-learn not installed") from e
+            coords = umap.UMAP(n_components=2, random_state=seed).fit_transform(Z)
+        elif method == "tsne":
+            if not _SKLEARN_OK:
+                raise RuntimeError(f"sklearn not available: {_SKLEARN_ERR}")
+            from sklearn.manifold import TSNE
+            perplexity = min(30, len(Z) // 4)
+            if perplexity < 1:
+                perplexity = 1
+            coords = TSNE(n_components=2, random_state=seed, perplexity=perplexity).fit_transform(Z)
+        else:
+            raise ValueError(method)
+
+        ax = axes[ax_idx]
+        for i, c in enumerate(classes):
+            mask = y == c
+            label = label_names.get(int(c), str(c)) if label_names else str(c)
+            ax.scatter(coords[mask, 0], coords[mask, 1], s=14, color=cmap(i % 20), label=label)
+        ax.set_title(cond)
+        if ax_idx == 0 and len(classes) <= 15:
+            ax.legend()
+
+    for ax in axes[n:]:
+        ax.axis("off")
+    fig.suptitle(title)
+    fig.tight_layout()
+    if save_path:
+        fig.savefig(save_path, dpi=160, bbox_inches="tight")
+        plt.close(fig)
     else:
         plt.show()
 

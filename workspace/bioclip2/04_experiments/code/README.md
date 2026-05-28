@@ -4,7 +4,7 @@ This directory holds the runnable experiment skeleton for:
 
 - **RQ1** — `experiment_1` in `run_experiment.py`
 - **RQ2** — `experiment_2` (per-rank + latent taxonomy probe)
-- **RQ3** — `experiment_3` (6-condition counterfactual C0..C5)
+- **RQ3** — `experiment_3` (5-condition counterfactual C0..C4)
 - **RQ4** — re-run RQ1/RQ3 with `--csv data/<domain>.csv`
 
 ## File map
@@ -12,12 +12,11 @@ This directory holds the runnable experiment skeleton for:
 ```
 code/
 ├── data_loader.py        # toy dataset + real CSV loader
-├── prompt_variants.py    # C0..C5 prompt generators
+├── prompt_variants.py    # C0..C4 prompt generators
 ├── metrics.py            # geometry & taxonomic metrics, bootstrap, permutation
 ├── extract_embeddings.py # OpenCLIP / BioCLIP / BioCLIP2 loaders + mock fallback
 ├── models/
-│   ├── baseline_flat.py     # thin alias for C0
-│   └── proposed_textfree.py # C5: linear adapter + hierarchical InfoNCE
+│   └── baseline_flat.py     # thin alias for C0
 ├── run_experiment.py     # main entry (argparse)
 ├── run_all.sh / .ps1     # full reproduction scripts
 ├── requirements.txt
@@ -90,7 +89,7 @@ python run_experiment.py --env_file /path/to/.env --model bioclip2 ...
 ```
 exp1_geometry.json          # RQ1 metrics + paired permutation p-values
 exp2_rank_levels.json       # RQ2 per-rank silhouette + latent taxonomy probe
-exp3_counterfactuals.json   # RQ3 preservation ratios for C2..C5
+exp3_counterfactuals.json   # RQ3 preservation ratios for C2..C4
 run_log.txt
 ```
 
@@ -139,13 +138,9 @@ img_0002.jpg,Animalia,Chordata,Aves,Passeriformes,Fringillidae,Carduelis,Carduel
 
 ## Known limitations / caveats
 
-1. **C5 adapter is a *light* baseline.** For a real comparison against the BioCLIP2
-   paper, replace `LinearAdapter` with LoRA on the image encoder's attention
-   projections. The current skeleton trains only the adapter on top of frozen
-   embeddings to keep CPU feasibility.
-2. **Mock text embeddings** hash prompts -> deterministic vectors. They produce
+1. **Mock text embeddings** hash prompts -> deterministic vectors. They produce
    geometrically plausible numbers but the *absolute values must not be
    interpreted as evidence about real CLIP encoders*. The mock is used only to
    validate the analysis pipeline end-to-end.
-3. The toy dataset is synthetic and primarily exercises the analysis code.
+2. The toy dataset is synthetic and primarily exercises the analysis code.
    It will *not* reproduce paper-quality effect sizes.

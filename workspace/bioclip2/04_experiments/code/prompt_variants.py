@@ -1,4 +1,4 @@
-"""Prompt variant generators for the 6 counterfactual conditions (C0..C5).
+"""Prompt variant generators for the 5 counterfactual conditions (C0..C4).
 
 Conditions
 ----------
@@ -7,7 +7,6 @@ C1: normal hierarchical 7-rank   -- "a photo of {kingdom} {phylum} {class} {orde
 C2: random-token hierarchical    -- "a photo of tax0 tax1 tax2 tax3 tax4 tax5 {species}" (structure preserved, content meaningless)
 C3: shuffled hierarchical        -- C1 with upper-6 rank labels replaced by labels from random other species (structure broken)
 C4: hierarchical word-bag        -- C1 labels randomly permuted each call (order info removed)
-C5: text-free hierarchical       -- no text, return None (caller skips text encoder; see models/proposed_textfree.py)
 
 All generators are deterministic given a numpy.random.Generator (rng) so experiments are reproducible.
 """
@@ -95,18 +94,12 @@ def prompt_C4_word_bag(record: TaxonomyRecord, rng: np.random.Generator) -> str:
     return f"a photo of {' '.join(labels)}"
 
 
-def prompt_C5_text_free(record: TaxonomyRecord) -> Optional[str]:
-    """C5 uses image-image hierarchical InfoNCE; no text. Returns None signal."""
-    return None
-
-
 PROMPT_FNS: Dict[str, callable] = {
     "C0": prompt_C0_flat,
     "C1": prompt_C1_hierarchical,
     "C2": prompt_C2_random_tokens,
     "C3": prompt_C3_shuffled,
     "C4": prompt_C4_word_bag,
-    "C5": prompt_C5_text_free,
 }
 
 
@@ -114,13 +107,13 @@ def generate_prompts(
     records: List[TaxonomyRecord],
     condition: str,
     rng: Optional[np.random.Generator] = None,
-) -> List[Optional[str]]:
+) -> List[str]:
     """Generate one prompt per record under the given condition.
 
     Parameters
     ----------
     records : list of TaxonomyRecord
-    condition : one of C0, C1, C2, C3, C4, C5
+    condition : one of C0, C1, C2, C3, C4
     rng : numpy random generator for stochastic conditions (C3, C4)
     """
     if condition not in PROMPT_FNS:
@@ -129,7 +122,7 @@ def generate_prompts(
     if rng is None:
         rng = np.random.default_rng(0)
 
-    prompts: List[Optional[str]] = []
+    prompts: List[str] = []
     for r in records:
         if condition == "C0":
             prompts.append(prompt_C0_flat(r))
@@ -141,8 +134,6 @@ def generate_prompts(
             prompts.append(prompt_C3_shuffled(r, records, rng))
         elif condition == "C4":
             prompts.append(prompt_C4_word_bag(r, rng))
-        elif condition == "C5":
-            prompts.append(prompt_C5_text_free(r))
     return prompts
 
 
@@ -157,7 +148,7 @@ if __name__ == "__main__":
         TaxonomyRecord("Plantae", "Tracheophyta", "Magnoliopsida", "Rosales",
                        "Rosaceae", "Rosa", "Rosa rugosa"),
     ]
-    for cond in ["C0", "C1", "C2", "C3", "C4", "C5"]:
+    for cond in ["C0", "C1", "C2", "C3", "C4"]:
         ps = generate_prompts(demo, cond, rng)
         print(f"-- {cond} --")
         for p in ps:
