@@ -88,15 +88,43 @@ def inter_class_margin(Z: np.ndarray, y: np.ndarray) -> float:
     return float(np.mean(ratios)) if ratios else float("nan")
 
 
-def silhouette_cosine(Z: np.ndarray, y: np.ndarray) -> float:
+def silhouette_cosine(
+    Z: np.ndarray,
+    y: np.ndarray,
+    precomputed_distance: Optional[np.ndarray] = None,
+) -> float:
+    """Cosine silhouette. When the caller computes silhouette many times with
+    the *same* Z but different labels (e.g. random-taxonomy permutation probe),
+    pass a precomputed (N, N) cosine-distance matrix to avoid re-doing the
+    pairwise distance each call.
+
+    `precomputed_distance` should be `1 - Z_norm @ Z_norm.T` with diagonal=0.
+    """
     if not _SKLEARN_OK:
         raise RuntimeError(f"sklearn not available: {_SKLEARN_ERR}")
-    Z = l2_normalize(Z)
     classes, counts = np.unique(y, return_counts=True)
-    # silhouette requires >=2 classes, each with >=2 samples; filter degenerate
     if len(classes) < 2 or counts.min() < 2:
         return float("nan")
+    if precomputed_distance is not None:
+        return float(silhouette_score(precomputed_distance, y, metric="precomputed"))
+    Z = l2_normalize(Z)
     return float(silhouette_score(Z, y, metric="cosine"))
+
+
+def cosine_distance_matrix(Z: np.ndarray) -> np.ndarray:
+    """Pairwise cosine *distance* matrix for L2-normalizable inputs.
+
+    Returns float32 (N, N). Memory: ~4·N²  bytes. For N≈12k this is ≈560MB —
+    callers should clean up promptly. Diagonal is forced to 0 and the matrix
+    is clamped to ≥ 0 to avoid sklearn precomputed-metric complaints from
+    floating-point noise.
+    """
+    Zn = l2_normalize(Z).astype(np.float32, copy=False)
+    sim = Zn @ Zn.T
+    D = 1.0 - sim
+    np.fill_diagonal(D, 0.0)
+    np.maximum(D, 0.0, out=D)
+    return D
 
 
 def alignment(Z_pos_a: np.ndarray, Z_pos_b: np.ndarray, alpha: float = 2.0) -> float:
@@ -217,7 +245,11 @@ def paired_permutation_test(
 ) -> Dict[str, float]:
     """Two-sided paired permutation test on mean difference (a - b).
 
-    Returns dict: {mean_diff, p_value, ci_lo, ci_hi}.
+    Returns dict: {mean_diff, p_value, ci_lo, ci_hi}. Vectorized — draws all
+    permutations in one shot. Note: because the RNG is consumed in one large
+    batch instead of n_perm small batches, numeric p-values will differ from
+    the previous implementation at the 1/n_perm precision level, but the
+    underlying distribution and statistical conclusion are unchanged.
     """
     if rng is None:
         rng = np.random.default_rng(0)
@@ -226,17 +258,16 @@ def paired_permutation_test(
     diff = a - b
     obs = diff.mean()
     n = len(diff)
-    count = 0
-    for _ in range(n_perm):
-        signs = rng.choice([-1, 1], size=n)
-        if abs((signs * diff).mean()) >= abs(obs):
-            count += 1
+
+    # permutation: random sign-flip of paired differences
+    signs = rng.choice([-1, 1], size=(n_perm, n))
+    sim_means = (signs * diff).mean(axis=1)
+    count = int((np.abs(sim_means) >= abs(obs)).sum())
     p = (count + 1) / (n_perm + 1)
-    # Bootstrap CI on diff
-    boots = np.empty(n_perm)
-    for i in range(n_perm):
-        idx = rng.integers(0, n, size=n)
-        boots[i] = diff[idx].mean()
+
+    # bootstrap CI on the mean difference
+    idx = rng.integers(0, n, size=(n_perm, n))
+    boots = diff[idx].mean(axis=1)
     ci_lo, ci_hi = np.percentile(boots, [2.5, 97.5])
     return {"mean_diff": float(obs), "p_value": float(p),
             "ci_lo": float(ci_lo), "ci_hi": float(ci_hi)}
@@ -249,16 +280,28 @@ def bootstrap_ci(
     alpha: float = 0.05,
     rng: Optional[np.random.Generator] = None,
 ) -> Tuple[float, float, float]:
-    """Generic bootstrap CI. Returns (point_estimate, ci_lo, ci_hi)."""
+    """Generic bootstrap CI. Returns (point_estimate, ci_lo, ci_hi).
+
+    For axis-aware statistics (np.mean, np.median, np.std, ...) the bootstrap
+    samples are drawn and reduced in a single vectorized call. Other callables
+    fall back to a per-resample Python loop.
+    """
     if rng is None:
         rng = np.random.default_rng(0)
     values = np.asarray(values, dtype=float)
     point = float(statistic(values))
     n = len(values)
-    boots = np.empty(n_boot)
-    for i in range(n_boot):
-        idx = rng.integers(0, n, size=n)
-        boots[i] = statistic(values[idx])
+    idx = rng.integers(0, n, size=(n_boot, n))
+    resamples = values[idx]
+    try:
+        boots = np.asarray(statistic(resamples, axis=1), dtype=float)
+        if boots.shape != (n_boot,):
+            raise TypeError
+    except TypeError:
+        boots = np.fromiter(
+            (statistic(resamples[i]) for i in range(n_boot)),
+            dtype=float, count=n_boot,
+        )
     lo, hi = np.percentile(boots, [100 * alpha / 2, 100 * (1 - alpha / 2)])
     return point, float(lo), float(hi)
 

@@ -36,21 +36,33 @@ class LinearAdapter(nn.Module):
 
 
 def lca_matrix(tax_labels_per_sample: List[List[str]]) -> np.ndarray:
-    """N x N matrix of LCA depths in [0, 7]."""
+    """N x N matrix of LCA depths in [0, R] where R = #ranks (typically 7).
+
+    Vectorized: O(R · N²) numpy broadcasts instead of pure-Python N² × R.
+    For N≈12k, R=7 this is seconds instead of tens of minutes.
+    """
     n = len(tax_labels_per_sample)
+    if n == 0:
+        return np.zeros((0, 0), dtype=np.float32)
+    R = len(tax_labels_per_sample[0])
+
+    # Encode each rank-column as integer ids; equality comparison is then a single int compare.
+    int_labels = np.empty((n, R), dtype=np.int32)
+    for r in range(R):
+        rank_strs = [s[r] for s in tax_labels_per_sample]
+        _, inv = np.unique(rank_strs, return_inverse=True)
+        int_labels[:, r] = inv
+
+    # depth[i,j] = number of leading ranks at which i and j agree.
+    # Equivalent to ANDing rank-equality masks down ranks and summing.
     M = np.zeros((n, n), dtype=np.float32)
-    for i in range(n):
-        for j in range(n):
-            if i == j:
-                M[i, j] = 7
-                continue
-            d = 0
-            for a, b in zip(tax_labels_per_sample[i], tax_labels_per_sample[j]):
-                if a == b:
-                    d += 1
-                else:
-                    break
-            M[i, j] = d
+    cumulative_match = np.ones((n, n), dtype=bool)
+    for r in range(R):
+        col = int_labels[:, r]
+        match_r = col[:, None] == col[None, :]
+        cumulative_match &= match_r
+        M += cumulative_match  # bool → 0/1 cast on accumulate
+    # Diagonal becomes R automatically (samples match themselves at every rank).
     return M
 
 
@@ -85,14 +97,21 @@ def train_C5_adapter(
     epochs: int = 5,
     lr: float = 1e-4,
     seed: int = 42,
-    device: str = "cpu",
+    device: Optional[str] = None,
 ) -> np.ndarray:
     """Train the LinearAdapter on top of frozen image embeddings.
 
     Returns the adapted (and L2-normalized) embeddings.
+
+    device=None auto-selects 'cuda' when available. The N×N similarity and LCA
+    matrices are kept on the selected device — at N≈12k this is roughly an
+    order of magnitude faster on GPU than CPU.
     """
     torch.manual_seed(seed)
     np.random.seed(seed)
+
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
 
     z = torch.from_numpy(image_embeddings).float().to(device)
     z = F.normalize(z, dim=-1)

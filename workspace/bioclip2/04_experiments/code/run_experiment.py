@@ -35,6 +35,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from prompt_variants import generate_prompts, TaxonomyRecord, RANKS
 from metrics import (
     intra_class_variance, inter_class_margin, silhouette_cosine,
+    cosine_distance_matrix,
     rankme, uniformity, alignment, knn_purity_at_k,
     paired_permutation_test, bootstrap_ci, effect_preservation_ratio,
     mutual_information_cluster_rank, cohens_d_paired,
@@ -90,6 +91,74 @@ def geometric_metrics(Z: np.ndarray, y: np.ndarray) -> Dict[str, float]:
         "uniformity": uniformity(Z),
         "knn_purity@10": knn_purity_at_k(Z, y, k=min(10, max(1, len(Z) - 1))),
     }
+
+
+def zero_shot_accuracy(records, img_emb, labels, encoder_state, cond, rng) -> Optional[float]:
+    """Top-1 zero-shot accuracy for one prompt condition.
+
+    Builds ONE text prototype per class (species) and assigns each image to the
+    nearest prototype by cosine similarity. Only meaningful with a real shared-space
+    text encoder, so returns None when no encoder is available, when the condition
+    has no text (C5), or when text/image dims do not match (e.g., mock embeddings).
+    """
+    if encoder_state is None:
+        return None
+    prompts = generate_prompts(records, cond, rng)  # one prompt per class
+    if any(p is None for p in prompts):
+        return None
+    txt_emb = encode_texts(encoder_state["model"], encoder_state["tokenizer"],
+                           prompts, device=encoder_state["device"])
+    if txt_emb.shape[1] != img_emb.shape[1]:
+        return None
+    I = img_emb / (np.linalg.norm(img_emb, axis=1, keepdims=True) + 1e-12)
+    T = txt_emb / (np.linalg.norm(txt_emb, axis=1, keepdims=True) + 1e-12)
+    pred = (I @ T.T).argmax(axis=1)
+    return float((pred == labels).mean())
+
+
+def _pick_color_rank(sample_records):
+    """Choose a taxonomic rank with a legible number of classes (2..20) for coloring."""
+    for ri in range(len(RANKS)):  # kingdom -> species
+        vals = {r.labels()[ri] for r in sample_records}
+        if 2 <= len(vals) <= 20:
+            return ri, RANKS[ri]
+    return len(RANKS) - 2, RANKS[-2]  # fallback: genus
+
+
+def save_tsne(img_emb, sample_records, out_path, seed=42, max_points=2000) -> Optional[str]:
+    """Save a 2-D t-SNE scatter of image embeddings, colored by a coarse rank.
+
+    Optional/best-effort: silently returns None if sklearn/matplotlib are missing.
+    Subsamples to `max_points` for speed.
+    """
+    try:
+        from sklearn.manifold import TSNE
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception:
+        return None
+    n = len(img_emb)
+    rng = np.random.default_rng(seed)
+    idx = rng.choice(n, size=min(max_points, n), replace=False)
+    Z = img_emb[idx]
+    Z = Z / (np.linalg.norm(Z, axis=1, keepdims=True) + 1e-12)
+    sub_records = [sample_records[i] for i in idx]
+    ri, rname = _pick_color_rank(sub_records)
+    color_labels = np.array([r.labels()[ri] for r in sub_records])
+    classes, inv = np.unique(color_labels, return_inverse=True)
+    emb2d = TSNE(n_components=2, init="pca", metric="cosine", random_state=seed,
+                 perplexity=min(30, max(5, len(Z) - 1))).fit_transform(Z)
+    plt.figure(figsize=(7, 6))
+    for ci, c in enumerate(classes):
+        m = inv == ci
+        plt.scatter(emb2d[m, 0], emb2d[m, 1], s=6, alpha=0.6, label=str(c))
+    plt.legend(title=rname, fontsize=6, markerscale=2, loc="best", ncol=2)
+    plt.title(f"t-SNE of image embeddings (colored by {rname})")
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+    return out_path
 
 
 # ---------------------------------------------------------------------------
@@ -208,13 +277,17 @@ def experiment_2(records, sample_records, labels, img_emb, tax_table, encoder_st
             results[rank_name]["C1"]["silhouette"] - results[rank_name]["C0"]["silhouette"]
         )
 
-    # latent taxonomy probing: random-taxonomy permutation control at species rank
+    # latent taxonomy probing: random-taxonomy permutation control at species rank.
+    # Precompute the cosine-distance matrix once and reuse for 50 permutations + the
+    # real-label silhouette — sklearn otherwise rebuilds the N×N distance on every call.
     rng2 = np.random.default_rng(7)
+    D_cos = cosine_distance_matrix(img_emb)
     perm_sil = []
     for _ in range(50):
         perm = rng2.permutation(labels)
-        perm_sil.append(silhouette_cosine(img_emb, perm))
-    real_sil = silhouette_cosine(img_emb, labels)
+        perm_sil.append(silhouette_cosine(img_emb, perm, precomputed_distance=D_cos))
+    real_sil = silhouette_cosine(img_emb, labels, precomputed_distance=D_cos)
+    del D_cos  # ~556MB at N=12k; free before next experiment
     results["latent_taxonomy_probe"] = {
         "real_silhouette": float(real_sil),
         "random_taxonomy_mean": float(np.mean(perm_sil)),
@@ -457,6 +530,23 @@ def main():
     with open(os.path.join(args.out, "exp3_counterfactuals.json"), "w") as f:
         json.dump(exp3, f, indent=2)
     log(f"exp3 semantic_organizer_supported: {exp3['semantic_organizer_supported']}")
+
+    # ---- 6) Zero-shot top-1 accuracy per condition (downstream recognition) ----
+    log("== Zero-shot top-1 accuracy (per-class text prototypes) ==")
+    zs_rng = np.random.default_rng(args.seed)
+    zeroshot = {}
+    for cond in ["C0", "C1", "C2", "C3", "C4"]:  # C5 has no text prompts
+        acc = zero_shot_accuracy(records, img_emb, labels, encoder_state, cond, zs_rng)
+        zeroshot[cond] = acc
+    with open(os.path.join(args.out, "zeroshot_accuracy.json"), "w") as f:
+        json.dump(zeroshot, f, indent=2)
+    log(f"zero-shot top-1: {zeroshot}")
+
+    # ---- 7) t-SNE visualization of image embeddings ----
+    tsne_path = save_tsne(img_emb, sample_records,
+                          os.path.join(args.out, "tsne_image_embeddings.png"),
+                          seed=args.seed)
+    log(f"t-SNE figure: {tsne_path if tsne_path else 'skipped (matplotlib/sklearn unavailable)'}")
 
     # ---- save log ----
     with open(log_path, "w", encoding="utf-8") as f:
