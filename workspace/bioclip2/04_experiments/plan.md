@@ -6,7 +6,7 @@
 |-----|------------|------------|
 | RQ1 | Exp1 (Geometry diagnostic — flat vs hierarchical) | 동일 BioCLIP2 frozen 모델에서 두 prompt 조건으로 image/text embedding을 추출하고 intra-class variance, inter-class margin, silhouette을 paired permutation test로 비교 |
 | RQ2 | Exp2 (Rank-level effect + latent taxonomy probing) | 각 Linnaean rank(species…order)에서 silhouette/kNN purity를 계산하고, 무작위-taxonomy permutation 대조로 image embedding 잠재 구조의 유의성을 검정 |
-| RQ3 | Exp3 (6-condition counterfactual ablation) | C0(flat)…C5(text-free hierarchical InfoNCE)를 동일 평가 데이터에서 비교해 *정보 채널 가설* vs *기하 조직 가설*을 분리; 효과 보존율을 bootstrap CI로 측정 |
+| RQ3 | Exp3 (5-condition counterfactual ablation) | C0(flat)…C4(word-bag)를 동일 평가 데이터에서 비교해 *정보 채널 가설* vs *기하 조직 가설*을 분리; 효과 보존율을 bootstrap CI로 측정 |
 | RQ4 | Exp4 (Cross-domain meta-analysis) | Exp1·Exp3를 다중 분류군 도메인(Aves/Insecta/Plantae/Fungi/Actinopterygii)에서 반복하고 random-effects meta-analysis (I², CV)로 일관성 평가 — **본 실행에서는 미수행** |
 
 ## Exp1: Hierarchical vs Flat Prompt의 Geometric Compactness
@@ -45,26 +45,23 @@
 
 ## Exp3: Counterfactual Prompt Ablation (RQ3 핵심)
 
-- **Goal**: 6개 조건 C0–C5로 정보 채널 가설(텍스트가 단순 정보 채널) vs 기하 조직 가설(구조가 본질) 분리.
+- **Goal**: 5개 조건 C0–C4로 정보 채널 가설(텍스트가 단순 정보 채널) vs 기하 조직 가설(구조가 본질) 분리.
 - **Independent variables**: prompt 조건 ∈
   - C0: flat species-only
   - C1: normal hierarchical 7-rank
   - C2: random-token hierarchical (placeholder 토큰 `tax0…tax6`, 구조 보존)
   - C3: shuffled hierarchical (상위 rank 라벨을 다른 종에서 임의 교체, 구조 파괴)
   - C4: hierarchical word-bag (7개 라벨 매 호출마다 random permute — 순서 정보 제거, 어휘 보존)
-  - C5: text-free hierarchical InfoNCE (텍스트 인코더 우회, linear adapter + LCA-weighted InfoNCE, 5 epoch)
 - **Dependent variables**: intra_var, inter_margin, silhouette (3개 핵심 지표).
 - **Effect-preservation ratio**: ρ_x = (M(C_x) − M(C0)) / (M(C1) − M(C0)). 각 seed별 paired ratio 계산 후 bootstrap CI.
-- **Controls**: 토큰 수 동일 (C2는 C1과 동일), C3 셔플은 시드별 다른 permutation, C5는 동일 epoch/lr.
+- **Controls**: 토큰 수 동일 (C2는 C1과 동일), C3 셔플은 시드별 다른 permutation.
 - **Sample size**: Exp1과 동일 11,788 images.
 - **Randomization / 시드**: 5 seed (100…104), bootstrap B=1000.
 - **Success criteria (Semantic-Organizer)**:
   - (i) C2 silhouette 보존율 ≥ 0.5, CI 하한 ≥ 0.3
   - (ii) C3 silhouette 보존율 ≤ 0.2, CI 상한 ≤ 0.4
-  - (iii) C5 silhouette 보존율 ≥ 0.5
 - **Risks & mitigations**:
   - Risk: CUB-200에서 (C1 − C0) < 0이면 preservation ratio 부호가 뒤집혀 해석 무의미 → Mitigation: raw silhouette 값과 절대 차이도 함께 보고; 분모 부호를 명시.
-  - Risk: C5 5-epoch light adapter는 frozen BioCLIP2 representation을 능가하기 어려움 → Mitigation: 단일 도메인에서 lower-bound로만 해석하고, 더 긴 학습 grid를 future work로 명시.
   - Risk: random-token이 BPE 분해 후 의미 토큰과 충돌 → Mitigation: `tax0…tax6` 같은 vocabulary-foreign 문자열 사용.
 
 ## Exp4: Cross-Domain Generalization (RQ4) — **미수행**
@@ -81,7 +78,8 @@
 | 코드 골격 작성 | 완료 |
 | Exp1 (CUB-200, BioCLIP2 ViT-L/14 cuda) | **완료** (5 seeds, 11,788 images) |
 | Exp2 (rank-level + latent probe) | **완료** (kingdom/phylum/class은 degenerate → skip) |
-| Exp3 (C0…C5 counterfactual ablation) | **완료** (5 seeds) |
+| Exp3 (C0…C4 counterfactual ablation) | **완료** (5 seeds) |
 | Exp4 (5 도메인 cross-domain) | **미수행** — Aves만 |
+| **OpenCLIP ViT-L/14 (추가 baseline 비교)** | **완료** — CUB-200 동일 데이터, Exp1·Exp2·Exp3 모두 실행 (≈ 68분). RQ4(다중 도메인 meta-analysis)와는 별개의 cross-model 비교; 동일 Aves 단일 도메인에서 일반 도메인 사전학습 모델(LAION-2B)과 생물 도메인 사전학습 모델(BioCLIP2)의 정성적 결론 일관성 확인 목적. |
 
 실제 실행 결과는 [results.md](results.md) 참조.

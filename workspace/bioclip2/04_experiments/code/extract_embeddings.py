@@ -21,6 +21,7 @@ the loader raises a clear error and the caller should fall back to mock embeddin
 from __future__ import annotations
 
 from dataclasses import dataclass
+from contextlib import contextmanager
 from typing import List, Optional, Tuple, Any
 import os
 import warnings
@@ -40,19 +41,53 @@ class ModelInfo:
 
 def _torch_device(device: Optional[str]) -> torch.device:
     if device is None:
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if torch.cuda.is_available():
+            return torch.device("cuda")
+        if (hasattr(torch.backends, "mps")
+                and torch.backends.mps.is_available()):
+            return torch.device("mps")
+        return torch.device("cpu")
     return torch.device(device)
+
+
+@contextmanager
+def _hf_token_env(hf_token: Optional[str]):
+    """Temporarily expose an HF token through the env vars used by huggingface_hub."""
+    if not hf_token:
+        yield
+        return
+
+    old_hf_token = os.environ.get("HF_TOKEN")
+    old_hub_token = os.environ.get("HUGGING_FACE_HUB_TOKEN")
+    os.environ["HF_TOKEN"] = hf_token
+    os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_token
+    try:
+        yield
+    finally:
+        if old_hf_token is None:
+            os.environ.pop("HF_TOKEN", None)
+        else:
+            os.environ["HF_TOKEN"] = old_hf_token
+        if old_hub_token is None:
+            os.environ.pop("HUGGING_FACE_HUB_TOKEN", None)
+        else:
+            os.environ["HUGGING_FACE_HUB_TOKEN"] = old_hub_token
 
 
 # ---------------------------------------------------------------------------
 # OpenCLIP loaders
 # ---------------------------------------------------------------------------
 
-def _load_openclip(name: str, pretrained: str) -> Tuple[Any, Any, Any, ModelInfo]:
+def _load_openclip(
+    name: str,
+    pretrained: str,
+    hf_token: Optional[str] = None,
+) -> Tuple[Any, Any, Any, ModelInfo]:
     import open_clip
 
-    model, _, preprocess = open_clip.create_model_and_transforms(name, pretrained=pretrained)
-    tokenizer = open_clip.get_tokenizer(name)
+    with _hf_token_env(hf_token):
+        model, _, preprocess = open_clip.create_model_and_transforms(name, pretrained=pretrained)
+        tokenizer = open_clip.get_tokenizer(name)
     model.eval()
     # OpenCLIP encodes embedding dim implicitly; we probe with a dummy text
     with torch.no_grad():
@@ -72,7 +107,10 @@ def _load_openclip(name: str, pretrained: str) -> Tuple[Any, Any, Any, ModelInfo
 # HuggingFace loader for BioCLIP variants
 # ---------------------------------------------------------------------------
 
-def _load_hf_bioclip(repo: str) -> Tuple[Any, Any, Any, ModelInfo]:
+def _load_hf_bioclip(
+    repo: str,
+    hf_token: Optional[str] = None,
+) -> Tuple[Any, Any, Any, ModelInfo]:
     """Load BioCLIP or BioCLIP2 from HuggingFace. Requires network + open_clip 3.0+
     or transformers, depending on packaging.
 
@@ -85,8 +123,9 @@ def _load_hf_bioclip(repo: str) -> Tuple[Any, Any, Any, ModelInfo]:
         raise RuntimeError(f"open_clip required: {e}")
     try:
         # open_clip supports hf-hub:org/repo syntax
-        model, preprocess = open_clip.create_model_from_pretrained(f"hf-hub:{repo}")
-        tokenizer = open_clip.get_tokenizer(f"hf-hub:{repo}")
+        with _hf_token_env(hf_token):
+            model, preprocess = open_clip.create_model_from_pretrained(f"hf-hub:{repo}")
+            tokenizer = open_clip.get_tokenizer(f"hf-hub:{repo}")
     except Exception as e:
         raise RuntimeError(
             f"Failed to load {repo} from HuggingFace via open_clip. "
@@ -119,14 +158,17 @@ MODEL_REGISTRY = {
 }
 
 
-def load_model(key: str) -> Tuple[Any, Any, Any, ModelInfo]:
+def load_model(
+    key: str,
+    hf_token: Optional[str] = None,
+) -> Tuple[Any, Any, Any, ModelInfo]:
     if key not in MODEL_REGISTRY:
         raise ValueError(f"Unknown model key {key}. Available: {list(MODEL_REGISTRY)}")
     entry = MODEL_REGISTRY[key]
     if isinstance(entry, tuple):
         name, pretrained = entry
-        return _load_openclip(name, pretrained)
-    return _load_hf_bioclip(entry)
+        return _load_openclip(name, pretrained, hf_token=hf_token)
+    return _load_hf_bioclip(entry, hf_token=hf_token)
 
 
 class _PathImageDataset(torch.utils.data.Dataset):
@@ -163,7 +205,7 @@ def encode_images(
 
     Args:
         images: PIL.Image 리스트, 파일 경로 리스트, 또는 미리 preprocess된 (N,3,H,W) tensor.
-        device: 'cuda'/'cpu'/None(자동 감지).
+        device: 'cuda'/'mps'/'cpu'/None(자동 감지).
         batch_size: GPU에서 ViT-B/32는 64-128, ViT-L/14는 16-32 권장.
         num_workers: 경로 입력 시 DataLoader worker 수. Windows에서는 0으로 두는 게 안전.
         use_amp: CUDA에서 float16 mixed precision. 보통 1.5~2배 빠름.

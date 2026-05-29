@@ -1,0 +1,183 @@
+% ---------------------------------------------------------------
+% Section 3: Preliminaries
+% ---------------------------------------------------------------
+
+\section{Preliminaries}
+\label{sec:preliminaries}
+
+We establish the mathematical foundations for our diagnostic analysis, covering contrastive vision-language learning, the BioCLIP model family, Linnaean taxonomy, and the embedding geometry metrics used throughout.
+
+\subsection{Contrastive Vision-Language Learning}
+
+\noindent\textbf{CLIP-style Training.}
+Given image-text pairs $\{(x_i, t_i)\}_{i=1}^{N}$, CLIP learns $\ell_2$-normalized encoders
+$f_v : \mathcal{X} \to \mathbb{R}^{d}$ and $f_t : \mathcal{T} \to \mathbb{R}^{d}$
+by minimizing a symmetric InfoNCE loss over mini-batches of size $B$:
+
+\begin{equation}
+\mathcal{L}_{\mathrm{CLIP}}
+= -\frac{1}{2B}\sum_{i=1}^{B}
+\left[
+\log\frac{e^{\mathrm{sim}(x_i,t_i)/\tau}}{\sum_{j} e^{\mathrm{sim}(x_i,t_j)/\tau}}
++
+\log\frac{e^{\mathrm{sim}(x_i,t_i)/\tau}}{\sum_{j} e^{\mathrm{sim}(x_j,t_i)/\tau}}
+\right],
+\label{eq:clip_loss}
+\end{equation}
+
+where $\mathrm{sim}(x,t)=f_v(x)^{\top}f_t(t)$ and $\tau>0$ is a learned temperature.
+At convergence, semantically matched pairs cluster together in the shared space.
+
+\noindent\textbf{Zero-shot Classification.}
+At inference, text prompts $\{t_c\}_{c=1}^{K}$ are encoded into class prototypes
+$\{w_c = f_t(t_c)\}$, and a test image $x$ is assigned to
+$\hat{c} = \arg\max_{c}\,\mathrm{sim}(x, t_c)$.
+The choice of prompt $t_c$ directly shapes the geometry of class prototypes and
+nearest-neighbor decision boundaries, making prompt design the central object of
+this work.
+
+\noindent\textbf{Alignment and Uniformity.}
+Wang and Isola~\cite{wang2020understanding} characterize embedding quality via
+\emph{alignment} (cohesion of positive pairs) and \emph{uniformity} (spread across
+the hypersphere). We report these as auxiliary global-geometry summaries alongside
+the cluster-level metrics in Section~\ref{sec:geometry_metrics}.
+
+\subsection{BioCLIP and BioCLIP2}
+
+\noindent\textbf{BioCLIP}~\cite{stevens2024bioclip} introduced hierarchical taxonomic
+prompts to biological vision-language learning, prepending the full Linnaean lineage
+(e.g., \texttt{Animalia Chordata Aves \ldots Passer domesticus}) to yield 17--20 pp
+gains over OpenCLIP. Qualitative analysis suggests the embedding space conforms to
+the tree of life, but no formal geometric characterization is given.
+
+\noindent\textbf{BioCLIP2}~\cite{gu2025bioclip2} scales this paradigm to
+TreeOfLife-200M ($\approx$214M images, ${>}$500K taxa) with a ViT-L/14 image encoder
+and an autoregressive text encoder, applying a separate contrastive loss at each rank.
+It achieves $+18.1$ pp over BioCLIP and exhibits \emph{emergent properties}:
+inter-species embeddings align with ecological traits (beak size, habitat) while
+intra-species variation is preserved in orthogonal subspaces.
+These properties are documented qualitatively; the present work provides their first
+controlled quantitative characterization.
+
+\noindent\textbf{Species-level Saturation.}
+Training on TreeOfLife-200M yields near-ceiling species discrimination \emph{before}
+any hierarchical text is applied.
+On CUB-200-2011 (200 bird species, 11,788 images), the flat-prompt baseline already
+achieves a species-level silhouette of $0.775$ and kNN purity of $99.9\%$.
+In this \emph{saturation regime}, hierarchical text cannot improve already near-perfect
+species boundaries and may instead dilute them by pulling embeddings toward shared
+higher-rank anchors — a key interpretive frame for the results in Section~\ref{sec:experiments}.
+
+\subsection{Linnaean Taxonomic Hierarchy}
+
+\noindent\textbf{Rank Structure.}
+We adopt the standard seven-rank Linnaean system ordered from coarsest to finest:
+\begin{equation}
+\text{kingdom} \succ \text{phylum} \succ \text{class} \succ \text{order}
+\succ \text{family} \succ \text{genus} \succ \text{species}.
+\label{eq:linnaean_ranks}
+\end{equation}
+Each species $c$ has a unique lineage $\ell(c) = (c^{(1)}, \dots, c^{(7)})$;
+higher-rank taxa are shared across species within the same clade.
+
+\noindent\textbf{Taxonomic Proximity.}
+The \emph{lowest common ancestor} (LCA) of two species is the deepest rank at which
+their lineages agree; its depth in $\{1,\dots,7\}$ is our ground-truth measure of
+taxonomic closeness, underlying the latent-taxonomy probe in
+Section~\ref{sec:rq2}.
+
+\noindent\textbf{Rank Homogeneity Confound.}
+When all species in a dataset share the same taxon at rank $r^{*}$, the corresponding
+prompt token is constant across every prompt and carries zero discriminative
+information, acting as uninformative anchor noise.
+CUB-200-2011 exemplifies this: all 200 species are Aves, so
+\texttt{Animalia}, \texttt{Chordata}, and \texttt{Aves} are identical across every
+prompt, effectively reducing the seven-rank hierarchy to four ranks
+(order $\to$ species).
+We address this confound by replicating experiments on the Rare Species dataset
+(400 species spanning multiple phyla), where upper-rank tokens are taxonomically
+diverse (Figure~\ref{fig:rank_homogeneity}).
+
+\begin{figure}[t]
+  \centering
+  % \includegraphics[width=0.95\linewidth]{figures/rank_homogeneity.pdf}
+  \caption{Rank homogeneity confound.
+           \textbf{Left (CUB-200-2011):} all 200 species share kingdom, phylum, and
+           class (Aves), so the top three rank tokens (grey) are constant and
+           contribute no inter-species signal.
+           \textbf{Right (Rare Species):} 400 species span multiple phyla, enabling
+           evaluation across all seven ranks.
+           Coloured nodes indicate rank tokens that vary across species;
+           grey nodes indicate tokens shared by all species in the dataset.}
+  \label{fig:rank_homogeneity}
+\end{figure}
+
+\subsection{Embedding Geometry Metrics}
+\label{sec:geometry_metrics}
+
+Let $Z_c = \{z_i : y_i^{(\mathrm{species})} = c\}$ be the set of $\ell_2$-normalized
+image embeddings for species $c$, with unnormalized centroid $\mu_c$ and normalized
+centroid $\hat{\mu}_c = \mu_c / \|\mu_c\|$.
+
+\noindent\textbf{Intra-class Variance} ($\downarrow$).
+Mean pairwise cosine distance within each species, macro-averaged over all species:
+\begin{equation}
+\overline{\sigma^2}
+= \frac{1}{|\mathcal{C}|}
+  \sum_{c}\;
+  \frac{1}{\binom{|Z_c|}{2}}
+  \sum_{\substack{z,z'\in Z_c \\ z\neq z'}}
+  (1 - z^{\top}z').
+\label{eq:intra_var}
+\end{equation}
+
+\noindent\textbf{Inter-class Margin} ($\uparrow$).
+Nearest-centroid distance normalized by within-class spread, macro-averaged:
+\begin{equation}
+\overline{\delta}
+= \frac{1}{|\mathcal{C}|}
+  \sum_{c}
+  \frac{\min_{c'\neq c}(1 - \hat{\mu}_c^{\top}\hat{\mu}_{c'})}
+       {\sigma_c}.
+\label{eq:inter_margin}
+\end{equation}
+
+\noindent\textbf{Silhouette Score at Rank $r$} ($\uparrow$).
+Our \emph{primary} metric. Let $a_i^{(r)}$ and $b_i^{(r)}$ be the mean intra- and
+nearest-inter-cluster cosine distances for $z_i$ at rank $r$:
+\begin{equation}
+S^{(r)}
+= \frac{1}{N}
+  \sum_{i=1}^{N}
+  \frac{b_i^{(r)} - a_i^{(r)}}
+       {\max(a_i^{(r)},\, b_i^{(r)})}.
+\label{eq:silhouette}
+\end{equation}
+Computed at each of the seven ranks, $S^{(r)}$ quantifies geometric organization at
+every level of the taxonomy.
+
+\noindent\textbf{kNN Purity at Rank $r$} ($\uparrow$).
+Fraction of $k{=}10$ nearest neighbors sharing the same rank-$r$ label:
+\begin{equation}
+\mathrm{Purity}^{(r)}_k
+= \frac{1}{N}
+  \sum_{i=1}^{N}
+  \frac{|\{j \in \mathrm{NN}_k(z_i) : y_j^{(r)} = y_i^{(r)}\}|}{k}.
+\label{eq:knn_purity}
+\end{equation}
+
+\noindent\textbf{RankMe} ($\uparrow$).
+Effective rank of the $N{\times}d$ embedding matrix~\cite{garrido2023rankme}:
+\begin{equation}
+\mathrm{RankMe}(\mathbf{Z})
+= \exp\!\Bigl(-\textstyle\sum_{k} p_k \log p_k\Bigr),
+\quad
+p_k = \frac{\sigma_k(\mathbf{Z})}{\|\sigma(\mathbf{Z})\|_1},
+\label{eq:rankme}
+\end{equation}
+where $\sigma(\mathbf{Z})$ is the vector of singular values of $\mathbf{Z}$.
+
+All metrics are computed on $\ell_2$-normalized embeddings. We report
+\emph{image-only} variants ($\{z_i\}$ alone) alongside \emph{image-text} variants
+(with text prototypes $\{w_c\}$ as anchors) to isolate modality-gap
+artefacts~\cite{liang2022mindgap} from genuine geometric effects.

@@ -16,7 +16,7 @@
 
 On toy data, C1 does *not* improve over C0 on any RQ1 metric. The most plausible explanation is that the synthetic images were generated from class-conditioned color means; the class signal in the image embedding is therefore so strong that silhouette is saturated near 1, and any additional text-side variation (the extra tokens of C1) couples to image embeddings only through the contrastive scoring head and acts as noise rather than as structure. We therefore *cannot* take this result as evidence against the hierarchical-compactness claim; the experiment is under-powered by construction. A full BioCLIP2 + TreeOfLife run is required to obtain meaningful signal on RQ1.
 
-## 5.2 Ablations: Counterfactual Conditions C0-C5 (RQ3 -- central instrument)
+## 5.2 Ablations: Counterfactual Conditions C0-C4 (RQ3 -- central instrument)
 
 [Table 2: Counterfactual ablation on OpenCLIP ViT-B/32, toy taxonomy, three seeds. Preservation ratio is computed only for silhouette here; rows where the C1-C0 sign is reversed make the ratio numerically ill-conditioned and are flagged.]
 
@@ -27,13 +27,12 @@ On toy data, C1 does *not* improve over C0 on any RQ1 metric. The most plausible
 | C2 random-token hierarchy (structure preserved) | 0.00239 | 445.66 | 0.9796 | **0.55** (CI tight at toy scale) |
 | C3 shuffled hierarchy (structure destroyed) | 0.0937 | 3.97 | 0.1002 | ill-conditioned (silhouette collapses) |
 | C4 word-bag (order destroyed) | 0.0210 | 44.01 | 0.8214 | ill-conditioned |
-| C5 text-free hierarchical InfoNCE | 0.00545 | 30.04 | 0.6936 | ill-conditioned |
 
 The toy data yields three observations whose *direction* is consistent with the geometry-organizer hypothesis but whose magnitudes are not interpretable as evidence:
 
 1. **C3 catastrophically collapses silhouette** (0.97 to 0.10). When the hierarchical structure is destroyed -- upper ranks reassigned from random other species, with species kept correct -- the embedding-space organization collapses far below even the flat baseline. This is in the predicted direction for H_geom.
 2. **C2 closely tracks C1.** The structure-preserving but content-empty condition (placeholder tokens at the upper-rank slots) achieves silhouette 0.98, essentially matching C1's 0.97 and even nudging slightly higher. This is the predicted *positive* signature of H_geom (structure carries the benefit).
-3. **C4 and C5 are intermediate-to-degraded.** Word-bag shuffling and the light text-free adapter both degrade silhouette substantially. For C5 specifically, the LoRA adapter trained for five epochs on 48 synthetic images is severely under-trained; this is not evidence about the hypothesis.
+3. **C4 is intermediate-to-degraded.** Word-bag shuffling degrades silhouette substantially, lying between the structure-preserving C2 and the structure-destroying C3.
 
 The preservation-ratio computation is, however, *not interpretable* in the toy regime because $\Delta_{\text{sil}}(C_1) = -0.0125$ has the *wrong sign*: the denominator that we expect to be substantially positive on real data is small and negative here. We report the silhouette ratios for C2 in the table for completeness (0.55) but emphasize that this number is a numerical artefact of dividing two small differences; only the *directional* contrast between C2 (tracks C1) and C3 (collapses far below) is informative.
 

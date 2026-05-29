@@ -7,7 +7,6 @@ CUB-200-2011은 200개 새 종을 영어 일반명(예: "Black_footed_Albatross"
 pygbif로 조회하여 각 클래스의 학명과 7-rank 분류(kingdom/phylum/class/order/family/
 genus/species)를 자동으로 채워 넣는다.
 
-학부생을 위한 흐름 설명
 ----------------------
   1) CUB의 classes.txt를 파싱해서 200개 일반명을 얻는다.
   2) 각 일반명을 GBIF의 name_suggest로 검색 → 학명을 얻는다.

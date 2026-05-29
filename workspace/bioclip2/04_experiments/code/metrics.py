@@ -7,28 +7,23 @@ Metrics
 - intra_class_variance     : mean within-class pairwise cosine distance (lower = better)
 - inter_class_margin       : nearest-other-centroid distance / within-class std (higher = better)
 - silhouette_cosine        : sklearn silhouette with cosine distance
-- alignment                : Wang & Isola 2020
 - uniformity               : Wang & Isola 2020
 - rankme                   : Garrido et al. 2023 (effective rank)
 - knn_purity_at_k          : taxonomic kNN purity
-- lca_depth_mean           : mean LCA depth of predicted vs gt species
-- hierarchy_distance       : Bertinetto-style tree-edge distance
-- mutual_information_cluster_rank : I(cluster ; rank-label)
 
 Statistical helpers
 -------------------
 - paired_permutation_test
 - bootstrap_ci
-- effect_preservation_ratio
 """
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 # Soft import sklearn so the module can be imported even if sklearn missing.
 try:
-    from sklearn.metrics import silhouette_score, mutual_info_score
+    from sklearn.metrics import silhouette_score
     from sklearn.neighbors import NearestNeighbors
     _SKLEARN_OK = True
 except Exception as e:  # pragma: no cover
@@ -180,57 +175,115 @@ def knn_purity_at_k(Z: np.ndarray, y: np.ndarray, k: int = 10) -> float:
     return float(purity.mean())
 
 
-def lca_depth_mean(
-    pred_species: Sequence[str],
-    true_species: Sequence[str],
-    tax_table: Dict[str, List[str]],
-) -> float:
-    """Mean LCA depth in Linnaean tree.
+def plot_embeddings(
+    Z: np.ndarray,
+    y: np.ndarray,
+    title: str = "",
+    method: str = "umap",
+    save_path: Optional[str] = None,
+    seed: int = 42,
+    label_names: Optional[Dict[int, str]] = None,
+) -> None:
+    if method == "umap":
+        try:
+            import umap
+        except ImportError as e:
+            raise RuntimeError("umap-learn not installed") from e
+        reducer = umap.UMAP(n_components=2, random_state=seed)
+        coords = reducer.fit_transform(Z)
+    elif method == "tsne":
+        if not _SKLEARN_OK:
+            raise RuntimeError(f"sklearn not available: {_SKLEARN_ERR}")
+        from sklearn.manifold import TSNE
+        perplexity = min(30, len(Z) // 4)
+        if perplexity < 1:
+            perplexity = 1
+        coords = TSNE(n_components=2, random_state=seed, perplexity=perplexity).fit_transform(Z)
+    else:
+        raise ValueError(method)
 
-    tax_table maps species name -> [kingdom, phylum, class, order, family, genus, species]
-    Depth from root: kingdom=1, ..., species=7. LCA depth = #ranks shared from root.
-    """
-    depths: List[int] = []
-    for p, t in zip(pred_species, true_species):
-        if p not in tax_table or t not in tax_table:
-            continue
-        pp, tt = tax_table[p], tax_table[t]
-        d = 0
-        for a, b in zip(pp, tt):
-            if a == b:
-                d += 1
-            else:
-                break
-        depths.append(d)
-    return float(np.mean(depths)) if depths else float("nan")
+    import matplotlib.pyplot as plt
+
+    classes = np.unique(y)
+    n_cls = len(classes)
+    w = 7 + max(0, (n_cls - 10) * 0.15)
+    cmap = plt.get_cmap("tab20")
+    plt.figure(figsize=(w, 5))
+    for i, c in enumerate(classes):
+        mask = y == c
+        label = label_names.get(int(c), str(c)) if label_names else str(c)
+        plt.scatter(coords[mask, 0], coords[mask, 1], s=18, color=cmap(i % 20), label=label)
+    plt.title(title)
+    if n_cls > 20:
+        plt.legend(loc="upper left", bbox_to_anchor=(1.05, 1))
+    else:
+        plt.legend()
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=160, bbox_inches="tight")
+        plt.close()
+    else:
+        plt.show()
 
 
-def hierarchy_distance(
-    pred_species: Sequence[str],
-    true_species: Sequence[str],
-    tax_table: Dict[str, List[str]],
-) -> float:
-    """Bertinetto-style: number of tree-edges between pred and true (lower = better).
-    For 7-rank flat hierarchy: dist = 2 * (7 - LCA depth)."""
-    depths: List[int] = []
-    for p, t in zip(pred_species, true_species):
-        if p not in tax_table or t not in tax_table:
-            continue
-        pp, tt = tax_table[p], tax_table[t]
-        d = 0
-        for a, b in zip(pp, tt):
-            if a == b:
-                d += 1
-            else:
-                break
-        depths.append(2 * (7 - d))
-    return float(np.mean(depths)) if depths else float("nan")
+def plot_comparison_grid(
+    embeddings_by_cond: Dict[str, np.ndarray],
+    y: np.ndarray,
+    title: str = "",
+    method: str = "umap",
+    save_path: Optional[str] = None,
+    seed: int = 42,
+    label_names: Optional[Dict[int, str]] = None,
+) -> None:
+    """여러 조건의 임베딩을 같은 그림에 서브플롯으로 비교."""
+    import matplotlib.pyplot as plt
 
+    conditions = list(embeddings_by_cond.keys())
+    n = len(conditions)
+    ncols = min(3, n)
+    nrows = int(np.ceil(n / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 4 * nrows))
+    axes = np.asarray(axes).reshape(-1)
+    classes = np.unique(y)
+    cmap = plt.get_cmap("tab20")
 
-def mutual_information_cluster_rank(cluster_labels: np.ndarray, rank_labels: np.ndarray) -> float:
-    if not _SKLEARN_OK:
-        raise RuntimeError(f"sklearn not available: {_SKLEARN_ERR}")
-    return float(mutual_info_score(rank_labels, cluster_labels))
+    for ax_idx, cond in enumerate(conditions):
+        Z = embeddings_by_cond[cond]
+        if method == "umap":
+            try:
+                import umap
+            except ImportError as e:
+                raise RuntimeError("umap-learn not installed") from e
+            coords = umap.UMAP(n_components=2, random_state=seed).fit_transform(Z)
+        elif method == "tsne":
+            if not _SKLEARN_OK:
+                raise RuntimeError(f"sklearn not available: {_SKLEARN_ERR}")
+            from sklearn.manifold import TSNE
+            perplexity = min(30, len(Z) // 4)
+            if perplexity < 1:
+                perplexity = 1
+            coords = TSNE(n_components=2, random_state=seed, perplexity=perplexity).fit_transform(Z)
+        else:
+            raise ValueError(method)
+
+        ax = axes[ax_idx]
+        for i, c in enumerate(classes):
+            mask = y == c
+            label = label_names.get(int(c), str(c)) if label_names else str(c)
+            ax.scatter(coords[mask, 0], coords[mask, 1], s=14, color=cmap(i % 20), label=label)
+        ax.set_title(cond)
+        if ax_idx == 0 and len(classes) <= 15:
+            ax.legend()
+
+    for ax in axes[n:]:
+        ax.axis("off")
+    fig.suptitle(title)
+    fig.tight_layout()
+    if save_path:
+        fig.savefig(save_path, dpi=160, bbox_inches="tight")
+        plt.close(fig)
+    else:
+        plt.show()
 
 
 # ---------------------------------------------------------------------------
@@ -304,18 +357,6 @@ def bootstrap_ci(
         )
     lo, hi = np.percentile(boots, [100 * alpha / 2, 100 * (1 - alpha / 2)])
     return point, float(lo), float(hi)
-
-
-def effect_preservation_ratio(
-    metric_C0: float,
-    metric_C1: float,
-    metric_Cx: float,
-) -> float:
-    """ rho_x = (M(Cx) - M(C0)) / (M(C1) - M(C0)); returns NaN if denominator near 0."""
-    denom = metric_C1 - metric_C0
-    if abs(denom) < 1e-8:
-        return float("nan")
-    return (metric_Cx - metric_C0) / denom
 
 
 def cohens_d_paired(a: np.ndarray, b: np.ndarray) -> float:
