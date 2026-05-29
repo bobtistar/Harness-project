@@ -481,6 +481,40 @@ def _redacted_args(args) -> Dict[str, object]:
     return safe
 
 
+def _filter_unreadable_images(labels, image_paths, sample_records, log=print):
+    """PIL이 열 수 없는 이미지(손상/truncated 다운로드)를 per-sample 리스트에서 제거.
+
+    geometry metric은 유효한 임베딩을 전제로 하므로, 깨진 샘플을 검은 placeholder로
+    대체하지 않고 아예 빼낸다. labels / image_paths / sample_records 세 리스트의
+    정렬(1:1 대응)을 유지하기 위해 동일한 keep 인덱스로 함께 필터링한다.
+
+    header만 확인(verify)하므로 빠르다. body가 truncated 된 파일은 통과할 수 있으나,
+    extract_embeddings._PathImageDataset 가 ImageFile.LOAD_TRUNCATED_IMAGES=True 로
+    디코딩하므로 인코딩 단계에서 worker가 죽지 않는다.
+    """
+    from PIL import Image, ImageFile
+    ImageFile.LOAD_TRUNCATED_IMAGES = True  # truncated JPEG도 디코딩 허용
+    keep = []
+    bad_examples = []
+    for i, p in enumerate(image_paths):
+        try:
+            with Image.open(p) as im:
+                im.verify()
+            keep.append(i)
+        except Exception as e:
+            if len(bad_examples) < 5:
+                bad_examples.append(f"{p} ({type(e).__name__})")
+    n_bad = len(image_paths) - len(keep)
+    if n_bad == 0:
+        return labels, image_paths, sample_records, 0
+    for ex in bad_examples:
+        log(f"    unreadable: {ex}")
+    new_labels = np.array([labels[i] for i in keep])
+    new_paths = [image_paths[i] for i in keep]
+    new_records = [sample_records[i] for i in keep]
+    return new_labels, new_paths, new_records, n_bad
+
+
 def _subsample_per_class(labels, image_paths, sample_records, max_per_class, seed):
     """클래스당 최대 N장만 남기는 서브샘플링 (학부생 빠른 테스트용)."""
     rng = np.random.default_rng(seed)
@@ -578,6 +612,12 @@ def main():
                 labels, image_paths, sample_records, args.max_per_class, args.seed
             )
             log(f"  → subsample({args.max_per_class}/class): {len(labels)} images remain")
+        if not args.mock:
+            labels, image_paths, sample_records, n_bad = _filter_unreadable_images(
+                labels, image_paths, sample_records, log=log
+            )
+            if n_bad:
+                log(f"  → dropped {n_bad} unreadable images; {len(image_paths)} remain")
     else:
         records, labels, sample_records, tax_table = get_toy_dataset(samples_per_species=6,
                                                                      seed=args.seed)

@@ -1,66 +1,93 @@
 # 5. Results
 
-> **Caveat.** All numerical results in this section are *toy- and mock-scale sanity-check signals* obtained from OpenCLIP ViT-B/32 on a synthetic taxonomy of eight placeholder species (six images per species; 48 total images), executed on CPU. The downloads required to run BioCLIP / BioCLIP2 on the full TreeOfLife evaluation set were not available in the present environment. The numbers below validate the pipeline and report *directional* trends; they should *not* be cited as evidence for or against the main hypotheses, and a full-scale validation on BioCLIP2 + TreeOfLife is registered as immediate future work.
+We report three executed runs — CUB-200 $\times$ BioCLIP2, iNat21-multiclade $\times$ BioCLIP2, and iNat21-multiclade $\times$ OpenCLIP ViT-L/14 — and map each result to the registered research question. All numbers are real frozen-evaluation measurements (five seeds, image embeddings cached once). Two analysis-shaping facts recur and are established in Section 5.1: (i) the species-level hierarchical effect $\Delta_{\text{sil}}(C_1)=S(C_1)-S(C_0)$ is *negative* in all three runs, which makes the preservation ratio's denominator negative and shifts the RQ3 decision onto raw drops and the rank-sign pattern (Section 3.1); and (ii) the seed-to-seed standard deviation is $\sim 10^{-7}$, so no metric survives Bonferroni correction and Cohen's $d$ is uninterpretable — our evidence is the *direction and relative magnitude* of effects and their *replication across runs*, not per-run significance.
 
-## 5.1 Main Results: Flat versus Hierarchical Geometric Compactness (RQ1)
+## 5.1 Flat versus Hierarchical Compactness (RQ1)
 
-[Table 1: Geometric metrics on a frozen backbone for C0 (flat species-only) and C1 (normal seven-rank hierarchical), executed on OpenCLIP ViT-B/32 with a toy taxonomy. Bootstrap CIs are based on B = 1000 resamples over three seeds.]
+[Table 1: Species-level geometry, C0 (flat) vs C1 (hierarchical), five seeds. $\Delta$ is $C1-C0$; paired-permutation $p$ in parentheses. None pass the pre-registered RQ1 threshold (intra $\geq 10\%$ drop AND inter-margin ratio $\geq 1.2\times$ AND silhouette gain $\geq +0.05$).]
 
-| Metric | C0 (flat) | C1 (hierarchical) | $\Delta$ (C1-C0) | bootstrap 95% CI | passes pre-registered threshold? |
-|--------|-----------|-------------------|-------------------|--------------------|-----------------------------------|
-| intra_var (lower) | 0.00239 | 0.00239 | 0 (tied) | tight | NO |
-| inter_margin (higher) | 713.11 | 389.59 | -323.5 | [-324.6, -322.8] | NO (reversed) |
-| silhouette (higher) | 0.9865 | 0.9740 | -0.0125 | [-0.013, -0.012] | NO (reversed) |
-| RankMe | 9.79 | 9.23 | -0.57 | tight | -- |
-| uniformity (lower) | -0.834 | -0.684 | +0.15 | tight | -- |
+| Run | silhouette C0 | silhouette C1 | $\Delta_{\text{sil}}$ | inter-margin C0$\to$C1 | kNN@10 C0$\to$C1 | passes? |
+|---|---|---|---|---|---|---|
+| CUB-200 $\times$ BioCLIP2 | 0.7749 | 0.7557 | **$-0.0192$** ($p{=}.078$) | 13.59 $\to$ 12.75 | 0.9992 $\to$ 0.9980 | No |
+| iNat21 $\times$ BioCLIP2 | 0.6827 | 0.6715 | **$-0.0112$** ($p{=}.078$) | 14.91 $\to$ 14.50 | 0.8954 $\to$ 0.8913 | No |
+| iNat21 $\times$ OpenCLIP | 0.4519 | 0.2262 | **$-0.2257$** ($p{=}.078$) | 8.91 $\to$ 4.16 | 0.8174 $\to$ 0.6004 | No |
 
-On toy data, C1 does *not* improve over C0 on any RQ1 metric. The most plausible explanation is that the synthetic images were generated from class-conditioned color means; the class signal in the image embedding is therefore so strong that silhouette is saturated near 1, and any additional text-side variation (the extra tokens of C1) couples to image embeddings only through the contrastive scoring head and acts as noise rather than as structure. We therefore *cannot* take this result as evidence against the hierarchical-compactness claim; the experiment is under-powered by construction. A full BioCLIP2 + TreeOfLife run is required to obtain meaningful signal on RQ1.
+Intra-class variance is unchanged to $\sim 10^{-8}$ in all runs (the hierarchical prompt does not move *within-species* spread); the action is entirely in *between-species* organization.
 
-## 5.2 Ablations: Counterfactual Conditions C0-C4 (RQ3 -- central instrument)
+**Reading.** At the species level, hierarchical prompting *does not* tighten the embedding — it slightly loosens it on BioCLIP2 ($-0.019$ on CUB-200, $-0.011$ on iNat21) and loosens it sharply on OpenCLIP ($-0.226$). The naive form of RQ1 ("hierarchical $\Rightarrow$ more compact species clusters") is therefore **refuted in all three runs**. Crucially, the *multi-clade* iNat21 run reproduces the BioCLIP2 species-level drop even though its upper-rank tokens are informative — so the drop is **not** an artefact of CUB-200's single-class confound. The consistent explanation, developed in Sections 5.2–5.4, is that BioCLIP2 already separates species near-ceiling under a flat prompt ($S=0.77$, kNN@10 $=99.9\%$ on CUB-200), so hierarchical text cannot add species-level signal and instead pulls species toward shared higher-rank anchors. We therefore reframe RQ1 from an *improvement* claim to a *cross-rank trade-off* claim, which RQ2 tests directly. The much larger OpenCLIP drop ($\approx 12\times$ BioCLIP2 on iNat21) is the first sign that biological pretraining makes the backbone *robust* to hierarchical conditioning rather than dependent on it.
 
-[Table 2: Counterfactual ablation on OpenCLIP ViT-B/32, toy taxonomy, three seeds. Preservation ratio is computed only for silhouette here; rows where the C1-C0 sign is reversed make the ratio numerically ill-conditioned and are flagged.]
+## 5.2 Rank-Resolved Effect (RQ2a)
 
-| Condition | intra_var | inter_margin | silhouette | preservation ratio (silhouette) |
-|-----------|-----------|--------------|------------|---------------------------------|
-| C0 flat | 0.00239 | 713.11 | 0.9865 | (baseline) |
-| C1 normal hierarchical | 0.00239 | 389.59 | 0.9740 | 1.00 (by definition) |
-| C2 random-token hierarchy (structure preserved) | 0.00239 | 445.66 | 0.9796 | **0.55** (CI tight at toy scale) |
-| C3 shuffled hierarchy (structure destroyed) | 0.0937 | 3.97 | 0.1002 | ill-conditioned (silhouette collapses) |
-| C4 word-bag (order destroyed) | 0.0210 | 44.01 | 0.8214 | ill-conditioned |
+[Table 2: $\Delta_{\text{sil}}(C_1)=S^{(r)}(C_1)-S^{(r)}(C_0)$ at each Linnaean rank. Positive = hierarchical prompt improves organization at that rank. Ranks degenerate on CUB-200 (single class Aves) are marked "—".]
 
-The toy data yields three observations whose *direction* is consistent with the geometry-organizer hypothesis but whose magnitudes are not interpretable as evidence:
+| Rank | CUB-200 $\times$ BioCLIP2 | iNat21 $\times$ BioCLIP2 | iNat21 $\times$ OpenCLIP |
+|---|---|---|---|
+| kingdom | — | **+0.0037** | **+0.157** |
+| phylum  | — | **+0.0059** | **+0.139** |
+| class   | — | **+0.0101** | **+0.182** |
+| order   | **+0.0064** | **+0.0095** | **+0.098** |
+| family  | **+0.0242** | **+0.0200** | $-0.034$ |
+| genus   | **+0.0360** | **+0.0182** | $-0.219$ |
+| species | $-0.0192$ | $-0.0112$ | $-0.226$ |
 
-1. **C3 catastrophically collapses silhouette** (0.97 to 0.10). When the hierarchical structure is destroyed -- upper ranks reassigned from random other species, with species kept correct -- the embedding-space organization collapses far below even the flat baseline. This is in the predicted direction for H_geom.
-2. **C2 closely tracks C1.** The structure-preserving but content-empty condition (placeholder tokens at the upper-rank slots) achieves silhouette 0.98, essentially matching C1's 0.97 and even nudging slightly higher. This is the predicted *positive* signature of H_geom (structure carries the benefit).
-3. **C4 is intermediate-to-degraded.** Word-bag shuffling degrades silhouette substantially, lying between the structure-preserving C2 and the structure-destroying C3.
+**Reading.** On BioCLIP2 the pattern is unambiguous and *replicated across both datasets*: hierarchical prompting **improves silhouette at every higher rank and degrades it only at the species rank**. On the multi-clade iNat21 run this holds across all six super-species ranks (kingdom through genus, $+0.004$ to $+0.020$), where CUB-200's homogeneity had previously hidden the top three ranks. This is the direct geometric signature of a *cross-rank trade-off*: the hierarchical prompt re-arranges cross-species distances to agree with taxonomic distance, paying for higher-rank organization with a small loss of fine-grained species separation — exactly the directional prediction of H_geom in Section 3.1. OpenCLIP shows the *same sign flip* but at a different crossover (positive through order, then negative from family down, with a large $-0.226$ at species), indicating that the general-domain backbone reorganizes coarse structure far more aggressively and sacrifices fine structure far more than the biology-pretrained one.
 
-The preservation-ratio computation is, however, *not interpretable* in the toy regime because $\Delta_{\text{sil}}(C_1) = -0.0125$ has the *wrong sign*: the denominator that we expect to be substantially positive on real data is small and negative here. We report the silhouette ratios for C2 in the table for completeness (0.55) but emphasize that this number is a numerical artefact of dividing two small differences; only the *directional* contrast between C2 (tracks C1) and C3 (collapses far below) is informative.
+## 5.3 Latent Taxonomic Structure Without Text (RQ2b)
 
-## 5.3 Latent Taxonomic Structure in OpenCLIP (RQ2)
+[Table 3: Species-level silhouette of the *image-only* embeddings under the true taxonomy vs a random-taxonomy permutation null ($B=50$).]
 
-[Table 3: Species-level silhouette for OpenCLIP ViT-B/32 embeddings under true taxonomy versus random-taxonomy permutation (B = 50).]
+| Run | true-label silhouette | random null ($\mu\pm\sigma$) | $z$-score |
+|---|---|---|---|
+| CUB-200 $\times$ BioCLIP2 | 0.5015 | $-0.079 \pm 0.0048$ | **+121.7** |
+| iNat21 $\times$ BioCLIP2 | 0.3702 | $-0.146 \pm 0.0029$ | **+180.9** |
+| iNat21 $\times$ OpenCLIP | $-0.0174$ | $-0.182 \pm 0.0033$ | **+50.7** |
 
-| Source | silhouette (cosine) | z-score vs. random-taxonomy null |
-|--------|----------------------|-----------------------------------|
-| true labels | 0.683 | +44.9 |
-| random-taxonomy permutation mean | -0.271 | (baseline) |
+**Reading.** With *no text prompt at all*, BioCLIP2 image embeddings separate the true taxonomy from random label permutations at astronomical significance ($z=122$ on CUB-200, rising to $z=181$ on the harder multi-clade set). The taxonomic structure that hierarchical prompts organize is therefore *already latent in the visual representation* — consistent with H_geom's core premise that text acts as an organizer of pre-existing structure rather than as the source of it. OpenCLIP is the instructive contrast: its true-label silhouette is *negative* ($-0.017$, i.e. species do not form clean clusters), yet it is still significantly above its own random null ($z=51$). Latent taxonomy thus exists in general-domain embeddings too, but in far weaker form; BioCLIP2's biological pretraining is what amplifies it into a strongly clustered geometry.
 
-Even on toy data, the *unsupervised-with-respect-to-taxonomy* OpenCLIP separates true species labels from random-taxonomy controls with a very large z-score. This is consistent with the latent-structure premise of RQ2 H1(b), but the synthetic class-conditioned color signal almost certainly inflates the magnitude. Per-rank decomposition (species $\to$ kingdom) cannot be reported on the toy taxonomy because at higher ranks the number of classes is too small for silhouette to be defined; the rank-wise analysis is part of the registered intended run.
+## 5.4 Counterfactual Ablation: Content vs Structure (RQ3, central instrument)
 
-## 5.4 Statistical Integrity Notes
+[Table 4: Species-level silhouette per condition and its drop from the flat baseline $S(C_0)-S(C_k)$. C2 = placeholder vocabulary, structure preserved; C3 = real vocabulary, structure destroyed; C4 = real vocabulary, order shuffled. The pre-registered ratio test is voided by $\Delta_{\text{sil}}(C_1)<0$ (Section 3.1); we report raw drops.]
 
-- Paired permutation p-values for the C0-vs-C1 comparison on the toy run are in the range 0.24-0.26, well above the Bonferroni-corrected $\alpha = 0.0033$. No metric is significant at toy scale, and we do not claim significance.
-- Cohen's $d$ for silhouette in the toy run is inflated (about -2910) because the seed-to-seed standard deviation collapses to about $10^{-6}$; this is a small-sample, low-noise artefact of synthetic data and would not occur on real images.
+| Condition | CUB-200 $\times$ BioCLIP2 | iNat21 $\times$ BioCLIP2 | iNat21 $\times$ OpenCLIP |
+|---|---|---|---|
+| C0 flat | 0.7749 (—) | 0.6827 (—) | 0.4519 (—) |
+| C1 hierarchical | 0.7557 ($-0.019$) | 0.6715 ($-0.011$) | 0.2262 ($-0.226$) |
+| **C2** placeholder / structure kept | 0.6965 (**$-0.078$**) | 0.5958 (**$-0.087$**) | 0.3533 (**$-0.099$**) |
+| **C4** order shuffled | 0.6281 ($-0.147$) | 0.5518 ($-0.131$) | 0.2068 ($-0.245$) |
+| **C3** structure destroyed | 0.4206 (**$-0.354$**) | 0.3014 (**$-0.381$**) | 0.0309 (**$-0.421$**) |
 
-## 5.5 Per-RQ Answers
+**Reading.** The same ordering holds in **all three runs**:
+$$\text{drop}(C_2) \;<\; \text{drop}(C_4) \;<\; \text{drop}(C_3),$$
+i.e. *removing the lexical content while keeping the hierarchical slot structure (C2) is the least damaging manipulation; shuffling order (C4) is worse; destroying the structural alignment (C3) is catastrophic.* The structure-destruction-to-content-removal drop ratio is remarkably stable across very different backbones and datasets: **$4.5\times$** (CUB-200/BioCLIP2), **$4.4\times$** (iNat21/BioCLIP2), **$4.3\times$** (iNat21/OpenCLIP). This is the predicted positive-and-negative signature of H_geom: the benefit of the hierarchical prompt survives content removal but collapses under structure destruction, *regardless of vocabulary*. The pre-registered ratio test returns `semantic_organizer_supported = False` in every run, but solely because its denominator $\Delta_{\text{sil}}(C_1)$ is negative (the saturated-species regime of Section 3.1); the secondary raw-drop + rank-sign rule, which was registered precisely for this regime, is satisfied in all three runs.
 
-We restate the four research questions and answer each with one of {supported, refuted, undetermined} given the evidence available.
+A backbone nuance: on OpenCLIP, C1 itself ($-0.226$) drops *more* than the content-empty C2 ($-0.099$) — the general-domain text encoder over-weights the (taxonomically irrelevant, to it) Latin upper-rank words and pulls species together, whereas inert placeholders do less harm. On BioCLIP2 this inversion does not occur (C1 $\approx -0.01$–$0.02$, much smaller than C2), again indicating that biological pretraining is what lets real taxonomic vocabulary be used *constructively* rather than as noise.
 
-| RQ | Toy-scale directional signal | Verdict on the registered hypothesis |
-|----|------------------------------|---------------------------------------|
-| **RQ1** (hierarchical prompts increase geometric compactness on a frozen biological VLM) | C1 does *not* improve over C0 on toy data; metrics are saturated by synthetic class-conditioned color. | **Undetermined** (and *not* refuted). The experiment is under-powered by construction; a BioCLIP2 + TreeOfLife replication is required. |
-| **RQ2** (latent taxonomic structure exists in OpenCLIP, and the BioCLIP2 effect is concentrated at higher ranks) | OpenCLIP separates true species from random-taxonomy at z = +44.9 on toy data; per-rank decomposition not possible at toy scale. | **Directional support for H1(b)** (latent structure plausibly present); H1(a) (rank-wise decomposition) **undetermined**. |
-| **RQ3** (semantic-organizer hypothesis: structure preserved $\Rightarrow$ benefit preserved; structure destroyed $\Rightarrow$ benefit collapses) | C3 silhouette collapses 0.97 $\to$ 0.10; C2 silhouette tracks C1 closely. Direction matches H_geom for both critical conditions. Preservation-ratio magnitudes are ill-conditioned at toy scale. | **Directional support; magnitudes undetermined.** Strongest qualitative signal of the toy run, but not yet a quantitative confirmation. |
-| **RQ4** (cross-domain consistency over five biological domains) | Not executed (domain data not downloaded). | **Not yet evaluated.** |
+## 5.5 Cross-Modal Check: Zero-Shot Accuracy (iNat21)
 
-We emphasize again that *supported* and *directional support* are weaker statements than the pre-registered success thresholds in Section 3.1 and Section 02_rqs.md call for. The main claims of the paper -- compactness improvement, latent taxonomic structure, and semantic-organizer mechanism -- remain *hypotheses* at the end of this preliminary report. The reported toy signals are *consistent with* these hypotheses but do not constitute evidence sufficient to adopt them.
+[Table 5: Zero-shot top-1 accuracy of the per-condition text prototypes on the iNat21 subset (821 species). This image-text metric complements the image-only geometry above.]
+
+| Condition | BioCLIP2 | OpenCLIP |
+|---|---|---|
+| C0 flat | **0.943** | 0.113 |
+| C1 hierarchical | 0.937 | 0.104 |
+| C2 placeholder / structure kept | 0.464 | 0.082 |
+| C3 structure destroyed | 0.351 | 0.033 |
+| C4 order shuffled | 0.901 | **0.114** |
+
+**Reading.** Two findings. First, the BioCLIP2-vs-OpenCLIP gap is enormous ($94\%$ vs $11\%$ flat), quantifying the biological-pretraining advantage that the geometry metrics described qualitatively. Second, the *cross-modal* metric tells a complementary story to the image-only geometry: here C3 (wrong-lineage real words) is again worst, but C2 (placeholder tokens) now collapses sharply ($0.94\to0.46$ on BioCLIP2) while C4 (real words, shuffled order) stays high ($0.90$). This is consistent and not contradictory: zero-shot matching depends on the *text prototype* being semantically meaningful, so emptying the upper-rank content (C2) dilutes the prototype even though it barely perturbs the *image* geometry — whereas destroying *structure* (C3) harms both channels. The dissociation (C2 hurts text matching but not image geometry; C3 hurts both) is itself evidence that the image-side reorganization measured in 5.2–5.4 is driven by structure, not lexical content.
+
+## 5.6 Per-RQ Verdicts, Statistical Integrity, and Limitations
+
+**Per-RQ verdicts.**
+
+| RQ | Verdict | Basis |
+|---|---|---|
+| **RQ1** (compactness) | naive form **refuted**; reframed as cross-rank trade-off | species-level $\Delta_{\text{sil}}(C_1)<0$ in all 3 runs, reproduced on multi-clade iNat21 (not a single-class artefact) |
+| **RQ2a** (rank-resolved) | **supported (directional, replicated)** | BioCLIP2: every super-species rank positive, species negative, on both datasets; OpenCLIP same sign flip |
+| **RQ2b** (latent taxonomy) | **strongly supported** | text-free image embeddings separate true taxonomy at $z=122$–$181$ (BioCLIP2); weak but significant in OpenCLIP ($z=51$) |
+| **RQ3** (organizer vs channel) | **directional support for H_geom** | drop$(C_3)\approx 4.3$–$4.5\times$ drop$(C_2)$ in all 3 runs; ratio test voided by denominator sign, raw-drop rule satisfied |
+| **RQ4** (cross-domain meta-analysis) | **partial** | multi-clade replication done (3 kingdoms aggregate); per-domain random-effects meta-analysis (I², CV) not run |
+
+**Statistical integrity.** With $\sigma=10^{-3}$ embedding noise the seed standard deviation is $\sim 10^{-7}$, so (i) all six Exp1 paired-permutation $p$-values lie in $[0.05, 0.08]$ and **none survives** Bonferroni ($\alpha\approx0.00167$), and (ii) Cohen's $d$ inflates to $\sim 10^{5}$ and is *not reported as evidence*. We therefore rest the conclusions on raw differences and on **cross-run replication** (two datasets $\times$ two backbones), which we regard as the stronger form of robustness here. We state plainly that no single run is individually significant under the registered test.
+
+**Limitations.** (1) The stochasticity model ($\sigma=10^{-3}$ Gaussian on cached embeddings) under-powers the significance tests; re-running with natural model stochasticity (inference dropout, mixed-precision, mini-batch shuffling) or a larger $\sigma$ is needed to obtain Bonferroni-significant effects. (2) Both datasets are vertebrate/plant/fungus *photographic* sets; the five-domain meta-analysis (Insecta-only, Plantae-only, Fungi-only, Actinopterygii) for a proper RQ4 heterogeneity estimate is not yet run. (3) The cross-backbone control was executed only on iNat21, not on CUB-200, so we cannot fully separate "OpenCLIP reorganizes more" from a dataset interaction. (4) BioCLIP ViT-B/16 (prior generation) and the text-free image-side hierarchical-InfoNCE condition were specified but not executed. None of these limitations bears on the *direction* or *replication* of the reported effects; they bound the *significance* and *generality* claims, consistent with the abstract's hedged framing.

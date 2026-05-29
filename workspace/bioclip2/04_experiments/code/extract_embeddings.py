@@ -185,7 +185,8 @@ class _PathImageDataset(torch.utils.data.Dataset):
         return len(self.paths)
 
     def __getitem__(self, idx):
-        from PIL import Image
+        from PIL import Image, ImageFile
+        ImageFile.LOAD_TRUNCATED_IMAGES = True  # truncated 다운로드 JPEG도 디코딩
         img = Image.open(self.paths[idx]).convert("RGB")
         return self.preprocess(img)
 
